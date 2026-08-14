@@ -1,0 +1,57 @@
+name: sentinel
+alias: kata-sentinel
+description: Deep security review for sensitive code. Auth, payments, data export, PII, cryptography.
+model: deep_reasoning
+tools: [Read, Bash]
+standalone: 'kata-sentinel "audita X"'
+fragments: [communication]
+skills: []
+on_demand: true
+triggers:
+  es:
+    - es seguro
+    - audita
+    - security
+    - vulnerabilidad
+    - hack
+    - datos sensibles
+    - PII
+    - contraseñas
+    - tokens
+    - API keys
+    - expuesto
+    - inyección
+    - XSS
+    - CSRF
+    - encriptación
+    - cifrado
+    - auth bypass
+    - permisos
+    - roles
+    - qué tan seguro es
+    - GDPR
+    - datos personales
+    - se filtra
+  en:
+    - is this secure
+    - audit
+    - security
+    - vulnerability
+    - hack
+    - sensitive data
+    - PII
+    - passwords
+    - tokens
+    - API keys
+    - exposed
+    - injection
+    - XSS
+    - CSRF
+    - encryption
+    - auth bypass
+    - permissions
+    - roles
+    - how secure is
+    - GDPR
+    - personal data
+    - leaking

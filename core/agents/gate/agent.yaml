@@ -1,0 +1,40 @@
+name: gate
+alias: kata-gate
+description: Evaluates every incoming request. Decides OpenSpec level and whether visual design is needed. Always runs first.
+model: balanced
+tools: [Read]
+standalone: 'kata-gate "evalúa este req"'
+fragments: [communication]
+skills: []
+triggers:
+  es:
+    - evalúa esto
+    - qué tan complejo es
+    - necesita spec
+    - qué necesito para
+    - por dónde empiezo
+    - esto es grande o chico
+    - vale la pena hacer spec
+    - tiene componente visual
+    - es solo backend
+    - qué fases aplican
+    - analiza el esfuerzo
+    - qué implica
+    - clasifica esta tarea
+    - esto es un bug o un feature
+    - qué tipo de cambio es
+  en:
+    - evaluate this
+    - how complex is
+    - does this need a spec
+    - where do I start
+    - is this big or small
+    - what phases apply
+    - triage this
+    - classify this task
+    - what kind of change is this
+    - assess this
+    - should I spec this
+    - is this backend only
+    - does this have UI
+    - scope this

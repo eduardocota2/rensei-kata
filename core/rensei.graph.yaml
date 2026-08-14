@@ -1,0 +1,106 @@
+# rensei (錬成) — the loop as data.
+# This file is the SINGLE SOURCE OF TRUTH for the workflow.
+# Agents, slash commands, RENSEI.md and the HTML diagram are all compiled from here.
+# Edit, then run: npx rensei-kata build
+version: 1
+entry: gate
+
+nodes:
+  gate:
+    agent: gate
+    model: balanced
+    effort: fast
+    label: GATE
+    summary: Evaluates every request. Decides OpenSpec level + visual design need.
+
+  design:
+    agent: designer
+    model: deep_reasoning
+    effort: deep
+    label: DESIGN
+    optional: true
+    lane: above
+    summary: Visual design via DESIGN_TOOL, evaluated against DESIGN.md scorecard.
+
+  analyze:
+    agent: architect
+    model: deep_reasoning
+    effort: deep
+    label: ANALYZE
+    summary: Requirements analysis. Ambiguities resolved before any plan.
+
+  plan:
+    agent: architect
+    model: balanced
+    effort: standard
+    label: PLAN
+    summary: Bite-sized TDD tasks with exact paths, ordered setup → core → edge cases.
+
+  implement:
+    agent: builder
+    model: routine
+    effort: fast
+    label: IMPLEMENT
+    summary: Executes the plan with TDD. One commit per task.
+
+  self-critique:
+    agent: builder
+    model: deep_reasoning
+    effort: deep
+    label: SELF-CRITIQUE
+    summary: Builder reviews its OWN code. Must find 2-3+ issues before external review.
+
+  spec-review:
+    agent: reviewer
+    model: balanced
+    effort: standard
+    label: SPEC-REVIEW
+    summary: Stage 1 — implementation matches spec EXACTLY. FAIL stops the line.
+
+  quality:
+    agent: reviewer
+    model: balanced
+    effort: standard
+    label: QUALITY-REVIEW
+    summary: Stage 2 — correctness, style, error handling, tests, security, simplicity.
+
+  correct:
+    agent: builder
+    model: routine
+    effort: fast
+    label: CORRECT
+    lane: below
+    summary: Fixes review findings, one commit per fix. Loops back to self-critique.
+
+  integrate:
+    agent: architect
+    model: balanced
+    effort: standard
+    label: INTEGRATE
+    summary: Full suite green, git clean, OpenSpec validated, PR ready.
+
+  done:
+    terminal: true
+    label: DONE
+
+edges:
+  - { from: gate,          to: design,        when: "visual == yes" }
+  - { from: gate,          to: analyze,       when: "visual == no" }
+  - { from: design,        to: analyze,       when: "score >= 80% or accepted" }
+  - { from: analyze,       to: plan,          when: "all ambiguities resolved" }
+  - { from: plan,          to: implement,     when: "plan complete: bite-sized tasks, exact paths" }
+  - { from: implement,     to: self-critique, when: "all tasks done, tests pass, commits clean" }
+  - { from: self-critique, to: spec-review,   when: "2-3+ issues found and fixed" }
+  - { from: spec-review,   to: quality,       when: "spec review PASS" }
+  - { from: quality,       to: correct,       when: "issues found", max: "$ITERATIONS.correction_loop" }
+  - { from: quality,       to: integrate,     when: "approved" }
+  - { from: correct,       to: self-critique, when: "issues fixed" }
+  - { from: integrate,     to: done,          when: "full suite green, git clean, PR ready" }
+
+# Gate skip rules: the gate agent may shorten the path for trivial work.
+# These are declarative hints for kata/rensei docs and for a future headless runner.
+skip-rules:
+  - when: "openspec == skip AND single-file change"
+    path: [gate, implement, self-critique, quality, integrate]
+  - when: "openspec == skip AND visual == yes"
+    path: [gate, design, implement, self-critique, quality, integrate]

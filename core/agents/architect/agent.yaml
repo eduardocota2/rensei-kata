@@ -1,0 +1,74 @@
+name: architect
+alias: kata-architect
+description: Requirements analysis, architecture design, planning, and integration. Never writes implementation code.
+model: deep_reasoning
+tools: [Read, Bash, WebSearch, WebFetch]
+standalone: 'kata-architect "analiza X" or "planea Y"'
+fragments: [communication]
+skills: [artifact-diagramming]
+triggers:
+  es: []
+  en: []
+modes:
+  analyze:
+    label: analyze mode
+    triggers:
+      es:
+        - analiza este requisito
+        - entiende esto
+        - qué preguntas harías
+        - qué falta definir
+        - qué no está claro
+        - qué asumimos
+        - hay ambigüedad en
+        - explícame esto
+        - qué significa
+        - aclara esto
+        - desglosa este requerimiento
+        - qué casos borde hay
+        - profundiza en
+      en:
+        - analyze this requirement
+        - understand this
+        - what questions would you ask
+        - what's missing
+        - what's unclear
+        - what are we assuming
+        - clarify this
+        - break down this requirement
+        - deep dive on
+        - what edge cases
+        - what ambiguities
+  plan:
+    label: plan mode
+    triggers:
+      es:
+        - genera un plan
+        - planea esto
+        - tasks para
+        - cómo implementarías
+        - hazme un plan
+        - crea los tickets
+        - divide en tareas
+        - estructura esto
+        - qué archivos tocar
+        - roadmap de implementación
+        - pasos para construir
+        - organiza el trabajo
+        - qué commits harías
+        - orden de implementación
+      en:
+        - generate a plan
+        - plan this
+        - tasks for
+        - how would you implement
+        - make a plan
+        - create tickets
+        - break into tasks
+        - structure this
+        - what files to touch
+        - implementation roadmap
+        - steps to build
+        - organize the work
+        - what commits
+        - implementation order

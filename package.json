@@ -1,0 +1,26 @@
+{
+  "name": "rensei-kata",
+  "version": "0.4.0",
+  "description": "rensei (錬成) + kata (型): a graph-driven AI engineering loop. One source of truth — the graph — compiles to agents, commands and docs for Claude Code and OpenCode.",
+  "keywords": ["claude-code", "agents", "workflow", "ai-engineering", "opencode", "methodology"],
+  "license": "MIT",
+  "type": "commonjs",
+  "bin": {
+    "rensei-kata": "bin/rensei-kata.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "yaml": "^2.5.0"
+  },
+  "files": [
+    "bin",
+    "src",
+    "core"
+  ],
+  "scripts": {
+    "validate": "node bin/rensei-kata.js validate",
+    "build": "node bin/rensei-kata.js build"
+  }
+}

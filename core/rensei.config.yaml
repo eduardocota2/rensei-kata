@@ -1,0 +1,32 @@
+# rensei configuration — tiers, effort, iterations, tools.
+# Referenced from rensei.graph.yaml and agent definitions as {{MODELS.x}}, {{EFFORT.x}}, $ITERATIONS.x
+MODELS:
+  deep_reasoning: opus          # gate decisions, analyze, self-critique, security, design
+  balanced: sonnet              # planning, reviews, integration (DEFAULT)
+  routine: haiku                # implementation, fixes, CRUD, docs
+
+EFFORT:
+  deep: max
+  standard: medium
+  fast: low
+  default: medium
+
+ITERATIONS:
+  correction_loop: 3            # max times correct → self-critique → re-review
+  design_variants: 3            # max design variants per screen
+  review_retries: 2             # max re-review cycles
+
+SDD_TOOL: openspec
+DESIGN_TOOL: stitch-mcp
+
+# Skills registry — every skill an agent may optionally load, with its purpose.
+# Agents declare which they can use (agents/<name>/agent.yaml → skills:).
+# Graph nodes may add/remove per phase (nodes.<phase>.skills in rensei.graph.yaml).
+# All skills are OPTIONAL: the agent loads them only when the task calls for it.
+SKILLS:
+  impeccable: Anti-slop UI/UX polish — visual hierarchy, spacing, motion, UX copy, accessibility
+  ai-design-tool-prompts: Prompt-crafting patterns for AI design tools (Stitch MCP)
+  design-md: DESIGN.md token validation — canonical colors, fonts, spacing, components
+  dataviz: Charts and dashboards that read as one system — form heuristics, color formulas
+  artifact-design: Visual design guidance for HTML/artifact pages
+  artifact-diagramming: Diagram know-how — when a picture earns its place, inline-SVG mechanics

@@ -1,0 +1,52 @@
+name: designer
+alias: kata-designer
+description: Visual design via Stitch MCP. Impeccable for prompt quality, DESIGN.md as token source of truth. Runs before PLAN.
+model: deep_reasoning
+tools: [Read, Bash]
+standalone: 'kata-designer "diseña X"'
+fragments: [communication]
+skills: [impeccable, ai-design-tool-prompts, design-md, dataviz]
+triggers:
+  es:
+    - diseña
+    - pantalla
+    - UI
+    - UX
+    - mockup
+    - interfaz
+    - visual
+    - look and feel
+    - componente visual
+    - dashboard
+    - landing
+    - formulario
+    - tabla
+    - gráfico
+    - cómo se vería
+    - prototipo
+    - wireframe
+    - layout
+    - maqueta
+    - rediseña
+    - dale estilo
+  en:
+    - design
+    - screen
+    - UI
+    - UX
+    - mockup
+    - interface
+    - visual
+    - look and feel
+    - visual component
+    - dashboard
+    - landing page
+    - form
+    - table
+    - chart
+    - how would it look
+    - prototype
+    - wireframe
+    - layout
+    - redesign
+    - style this
