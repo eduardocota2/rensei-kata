@@ -87,6 +87,31 @@ function doctor(targetDir, core) {
   if (exists(path.join(targetDir, '.rensei', 'rensei.graph.yaml'))) add('graph', 'ok', '.rensei/rensei.graph.yaml present (run `validate` for deep checks)');
   else add('graph', 'err', '.rensei/rensei.graph.yaml missing', 'run: npx rensei-kata init');
 
+  // 7. shelf: deactivated agents count (info, not a problem)
+  if (core && core.graph && core.coreDir) {
+    const fs = require('fs');
+    const agentsDir = path.join(core.coreDir, 'agents');
+    if (fs.existsSync(agentsDir)) {
+      const inGraph = new Set();
+      for (const [id, node] of Object.entries(core.graph.nodes || {})) {
+        if (!node.terminal) inGraph.add(id);
+      }
+      const shelved = fs.readdirSync(agentsDir, { withFileTypes: true })
+        .filter(d => d.isDirectory() && !inGraph.has(d.name))
+        .filter(d => fs.existsSync(path.join(agentsDir, d.name, 'agent.yaml')) && fs.existsSync(path.join(agentsDir, d.name, 'prompt.md')))
+        .map(d => d.name)
+        .filter(name => {
+          // on_demand helpers are available outside the loop — not shelved
+          try {
+            const YAML = require('yaml');
+            const def = YAML.parse(fs.readFileSync(path.join(agentsDir, name, 'agent.yaml'), 'utf8')) || {};
+            return !def.on_demand;
+          } catch (e) { return true; }
+        });
+      if (shelved.length) add('shelf', 'ok', `${shelved.length} deactivated agent${shelved.length > 1 ? 's' : ''} on the studio shelf (${shelved.join(', ')}) — reactivate or delete forever from the studio`);
+    }
+  }
+
   return checks;
 }
 

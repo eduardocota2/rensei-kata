@@ -19,6 +19,40 @@ const { studioPage } = require('./studio-page');
 const GRAPH_RENDER_JS = path.join(__dirname, 'graph-render.js');
 const CONFIG_FILE = 'rensei.config.yaml';
 
+// Agents living on the shelf: a complete agents/<id>/ directory whose node
+// is NOT in the graph (and is not on_demand). Deactivated, not deleted —
+// their brain (prompt, config, skills) waits for reactivation.
+function inactiveAgents(core) {
+  const fs = require('fs');
+  const inGraph = new Set();
+  for (const [id, node] of Object.entries(core.graph.nodes || {})) {
+    if (!node.terminal) inGraph.add(id);
+  }
+  const out = [];
+  const agentsDir = path.join(core.coreDir, 'agents');
+  if (!fs.existsSync(agentsDir)) return out;
+  for (const entry of fs.readdirSync(agentsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const id = entry.name;
+    if (inGraph.has(id)) continue;
+    const defFile = path.join(agentsDir, id, 'agent.yaml');
+    const promptFile = path.join(agentsDir, id, 'prompt.md');
+    if (!fs.existsSync(defFile) || !fs.existsSync(promptFile)) continue; // incomplete dir — not a shelf item
+    let def = {};
+    try { def = YAML.parse(read(defFile)) || {}; } catch (e) { /* unreadable def — still shelvable */ }
+    if (def.on_demand) continue; // on-demand helpers are a different state
+    const defaultPrompt = /You are @[\w-]+ — the .* phase of the rensei loop\./;
+    out.push({
+      name: id,
+      description: def.description || '',
+      skills: def.skills || [],
+      hasCustomPrompt: !defaultPrompt.test(read(promptFile).slice(0, 120)),
+    });
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  return out;
+}
+
 function send(res, status, body, type = 'application/json') {
   const data = typeof body === 'string' ? body : JSON.stringify(body);
   res.writeHead(status, { 'Content-Type': `${type}; charset=utf-8` });
@@ -128,6 +162,7 @@ function startStudio(targetDir, { port = 4789, open = true } = {}) {
           graph: st.core.graph,
           config: st.core.config,
           agents: [...st.core.agents].map(([name, a]) => ({ name, skills: a.def.skills || [] })),
+          inactive: inactiveAgents(st.core),
           yamlText: read(graphFile),
           errors: st.errors,
           warnings: st.warnings,
@@ -146,6 +181,21 @@ function startStudio(targetDir, { port = 4789, open = true } = {}) {
         return send(res, r.status, r.body);
       }
       // Convert JSON model → YAML text without saving (keeps the YAML pane in sync).
+      // Shelf: delete a deactivated agent FOREVER (removes agents/<id>/).
+      // Only allowed for shelf items — an active agent must be deactivated
+      // (node removed from the graph) first.
+      const delMatch = url.pathname.match(/^\/api\/agent\/([a-z0-9-]+)$/);
+      if (delMatch && req.method === 'DELETE') {
+        const fs = require('fs');
+        const id = delMatch[1];
+        const shelf = inactiveAgents(loadCore(coreDir));
+        if (!shelf.some(a => a.name === id)) {
+          return send(res, 409, { ok: false, errors: [`"${id}" is not on the shelf — remove its node from the graph first`] });
+        }
+        fs.rmSync(path.join(coreDir, 'agents', id), { recursive: true, force: true });
+        return send(res, 200, { ok: true, deleted: id });
+      }
+
       if (req.method === 'POST' && url.pathname === '/api/to-yaml') {
         const { graph } = JSON.parse(await readBody(req));
         return send(res, 200, { text: YAML.stringify(graph, { indent: 2 }) });

@@ -247,10 +247,19 @@ function validate(core) {
   }
 
   // -- agents that no graph node uses ---------------------------------------
+  // An orphan with a complete directory is DEACTIVATED (on the studio shelf)
+  // — a legitimate state, surfaced as info, never as a problem.
   for (const [name, { def }] of agents) {
     if (def.on_demand) continue;
     const used = nodeNames.includes(name);
-    if (!used) pushWarning(`agent "${name}" is not referenced by any graph node (standalone-only? mark on_demand: true if intentional)`);
+    if (!used) {
+      const fs = require('fs');
+      const path = require('path');
+      const complete = fs.existsSync(path.join(core.coreDir, 'agents', name, 'agent.yaml')) &&
+        fs.existsSync(path.join(core.coreDir, 'agents', name, 'prompt.md'));
+      if (complete) pushWarning(`agent "${name}" is deactivated (on the studio shelf) — reactivate it by adding a node with that name`);
+      else pushWarning(`agent "${name}" is not referenced by any graph node (standalone-only? mark on_demand: true if intentional)`);
+    }
   }
 
   return { errors, warnings, issues };

@@ -103,6 +103,16 @@ const STRINGS = {
   promptLoadFail: 'could not load the prompt — is the studio server running?',
   promptSaved: 'Prompt saved — Save the graph to recompile the agents.',
   promptDirty: 'prompt edited — click Save prompt to write it',
+  // shelf (deactivated agents)
+  shelfTitle: 'Deactivated',
+  shelfEmpty: 'nothing here — agents you remove from the graph wait on this shelf',
+  shelfHint: 'Removed from the workflow, not deleted — reactivate to restore the agent with its prompt intact',
+  shelfReactivate: 'reactivate',
+  shelfDelete: 'delete forever',
+  shelfDeleted: '@{a} deleted permanently',
+  shelfReactivated: '@{a} restored — connect it and Save',
+  shelfCustom: 'custom prompt',
+  shelfNeedName: 'another node already uses that name — the shelf item stays until you rename it',
   // data defaults
   newNodeBase: 'node',
   duplicateTitle: 'Duplicate = a NEW agent based on this one — an unlinked copy (config + prompt), wired on save',
@@ -423,6 +433,38 @@ button:disabled { opacity: .45; cursor: default; pointer-events: none; }
 }
 .prompt-field .prompt-area:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .prompt-field .prompt-save { margin-top: .45rem; font-size: 12px; }
+
+/* shelf — deactivated agents at the bottom of the inspector */
+.shelf { margin-top: 1.1rem; border-top: 1px solid var(--border); padding-top: .8rem; }
+.shelf-head {
+  display: flex; align-items: center; gap: .4rem; cursor: pointer; user-select: none;
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 650;
+}
+.shelf-head .count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
+  font-size: 10.5px; font-weight: 650; color: var(--on-accent); background: var(--accent-fill);
+}
+.shelf-head .chev { margin-left: auto; transition: transform .18s ease-out; }
+.shelf.closed .chev { transform: rotate(-90deg); }
+.shelf-body { padding: .55rem 0 .2rem; }
+.shelf.closed .shelf-body { display: none; }
+.shelf-hint { font-size: 11px; color: var(--faint); line-height: 1.5; margin-bottom: .5rem; }
+.shelf-item {
+  display: flex; align-items: center; gap: .45rem; padding: .42rem .5rem;
+  border: 1px solid var(--border); border-radius: 8px; margin-bottom: .4rem;
+  background: var(--elevated);
+}
+.shelf-item .meta { flex: 1; min-width: 0; }
+.shelf-item .nm { font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.shelf-item .ds { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shelf-item .custom {
+  font-size: 9.5px; font-weight: 650; letter-spacing: .04em; color: var(--ok);
+  border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: 99px; padding: 1px 6px;
+}
+.shelf-item button { font-size: 11px; padding: .2rem .5rem; flex: none; }
+.shelf-item button.danger { color: var(--danger); }
+.shelf-empty { font-size: 11.5px; color: var(--faint); font-style: italic; padding: .3rem 0; }
 .inspector .actions { display: flex; gap: .5rem; margin-top: 1rem; padding-top: .85rem; border-top: 1px solid var(--border); }
 
 /* yaml drawer */
@@ -586,6 +628,8 @@ const PAGE_JS = `
     problems: null, // { nodes: {name:[msg]}, edges: {idx:[msg]} } — from the last validation
     guides: [], // active alignment guide lines during a node drag
     selection: [], // marquee multi-selection (node names); state.selected stays the inspector target
+    inactive: [], // deactivated agents (the shelf)
+    shelfOpen: false,
     runtime: 'claude', runtimes: ['claude'], runtimeDirty: false,
   };
 
@@ -1563,6 +1607,82 @@ const PAGE_JS = `
     return wrap;
   }
 
+  // ---------- the shelf: deactivated agents ----------
+  // Removed from the workflow, never destroyed. Reactivate drops the node
+  // back on the canvas (the scaffolder restores its brain on save); delete
+  // forever removes agents/<id>/ for real.
+  function shelfMarkup() {
+    var n = (state.inactive || []).length;
+    var h = '<div class="shelf' + (state.shelfOpen && n ? '' : ' closed') + '" id="shelf">' +
+      '<div class="shelf-head" id="shelf-toggle"><span>' + S.shelfTitle + '</span>' +
+      (n ? '<span class="count">' + n + '</span>' : '') +
+      '<svg class="chev" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><path d="M2 3.5L5 6.5L8 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      '</div>' +
+      '<div class="shelf-body">';
+    if (!n) {
+      h += '<div class="shelf-empty">' + S.shelfEmpty + '</div>';
+    } else {
+      h += '<div class="shelf-hint">' + S.shelfHint + '</div>';
+      state.inactive.forEach(function (a) {
+        h += '<div class="shelf-item" data-shelf="' + a.name + '">' +
+          '<div class="meta"><div class="nm">@' + RG.esc(a.name) + (a.hasCustomPrompt ? ' <span class="custom">' + S.shelfCustom + '</span>' : '') + '</div>' +
+          '<div class="ds">' + RG.esc(a.description || '') + '</div></div>' +
+          '<button data-reactivate="' + a.name + '" title="Add this agent back to the graph">' + S.shelfReactivate + '</button>' +
+          '<button class="danger" data-kill="' + a.name + '" title="Delete agents/' + a.name + '/ permanently">' + S.shelfDelete + '</button>' +
+          '</div>';
+      });
+    }
+    h += '</div></div>';
+    return h;
+  }
+
+  function wireShelf() {
+    var tog = document.getElementById('shelf-toggle');
+    if (tog) tog.addEventListener('click', function () {
+      state.shelfOpen = !state.shelfOpen;
+      var el = document.getElementById('shelf');
+      if (el) el.classList.toggle('closed', !state.shelfOpen || !(state.inactive || []).length);
+    });
+    inspector.querySelectorAll('[data-reactivate]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var name = b.getAttribute('data-reactivate');
+        if (state.graph.nodes[name]) { toast(S.shelfNeedName, 'warn'); return; }
+        pushHistory('reactivate:' + name);
+        state.graph.nodes[name] = {
+          label: name.toUpperCase(),
+          model: Object.keys(rtTable('MODELS') || {})[0] || 'balanced',
+          effort: Object.keys(rtTable('EFFORT') || {})[0] || 'standard',
+        };
+        if (!state.graph.positions) state.graph.positions = {};
+        state.graph.positions[name] = spawnSpot();
+        state.inactive = (state.inactive || []).filter(function (a) { return a.name !== name; });
+        markDirty(); render(); select({ kind: 'node', key: name });
+        toast(S.shelfReactivated.split('{a}').join('@' + name), 'ok');
+      });
+    });
+    inspector.querySelectorAll('[data-kill]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var name = b.getAttribute('data-kill');
+        // two-step inline (no modal): first click arms, second deletes
+        if (b.dataset.armed !== '1') {
+          b.dataset.armed = '1';
+          b.textContent = 'sure?';
+          setTimeout(function () { if (b.isConnected) { b.dataset.armed = ''; b.textContent = S.shelfDelete; } }, 2600);
+          return;
+        }
+        fetch('/api/agent/' + name, { method: 'DELETE' })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            if (!j.ok) { toast((j.errors || ['delete failed'])[0], 'err'); return; }
+            state.inactive = (state.inactive || []).filter(function (a) { return a.name !== name; });
+            inspect();
+            toast(S.shelfDeleted.split('{a}').join('@' + name), 'warn');
+          })
+          .catch(function () { toast(S.networkError, 'err'); });
+      });
+    });
+  }
+
   function renameNode(oldName, newName) {
     newName = newName.trim();
     if (!newName || newName === oldName || state.graph.nodes[newName]) return;
@@ -1637,8 +1757,10 @@ const PAGE_JS = `
         '<div class="inspector-head"><span>' + S.inspectorTitle + '</span>' + closeBtn() + '</div>' +
         (multi > 1
           ? '<div class="inspector-empty"><strong>' + S.nSelected.replace('{n}', multi) + '</strong><br><br>' + S.nSelectedHint + '</div>'
-          : '<div class="inspector-empty">' + S.inspectorEmpty + '</div>');
+          : '<div class="inspector-empty">' + S.inspectorEmpty + '</div>') +
+        shelfMarkup();
       wireClose();
+      wireShelf();
       return;
     }
 
@@ -1699,7 +1821,9 @@ const PAGE_JS = `
       actions.className = 'actions';
       actions.appendChild(dangerButton(S.deleteNode, deleteSelected));
       body.appendChild(actions);
+      body.insertAdjacentHTML('beforeend', shelfMarkup());
       inspector.appendChild(body);
+      wireShelf();
     } else {
       var idx = state.selected.key;
       var edge = state.graph.edges[idx];
@@ -2096,6 +2220,7 @@ const PAGE_JS = `
     api('/api/model').then(function (m) {
       if (!m.body || !m.body.graph) return;
       state.agents = m.body.agents || state.agents;
+      state.inactive = m.body.inactive || state.inactive;
       if (m.body.runtime) state.runtime = m.body.runtime;
       inspect();
     });
@@ -2423,6 +2548,7 @@ const PAGE_JS = `
     state.graph = r.body.graph;
     state.config = r.body.config || {};
     state.agents = r.body.agents || [];
+    state.inactive = r.body.inactive || [];
     state.yamlText = r.body.yamlText;
     state.runtime = r.body.runtime || 'claude';
     state.runtimes = r.body.runtimes || ['claude'];
