@@ -9,11 +9,27 @@ skills: []
 triggers:
   es:
     - autocrítica
+    - autocrítica del código
     - critica tu propio código
     - revisa tu propio trabajo
     - qué mejorarías de tu código
+    - revisa tu trabajo antes de entregar
+    - encuentras defectos en lo que hiciste
+    - analiza tu propia implementación
+    - revisa el diff que acabas de hacer
+    - revisa los cambios recientes
+    - está bien lo que escribí
+    - revisa antes de mandar a review
   en:
     - self-critique
     - critique your own code
     - review your own work
     - what would you improve in your code
+    - review your work before handing off
+    - find flaws in what you just did
+    - review your own implementation
+    - review the diff you just made
+    - review the recent changes
+    - is what I wrote any good
+    - pre-review your work
+    - critique the implementation before review

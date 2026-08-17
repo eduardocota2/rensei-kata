@@ -1586,6 +1586,8 @@ const PAGE_JS = `
   // The label is the identity: the id is its slug. Renaming re-slugs the node
   // (and everything that references it); a slug collision is a naming
   // collision — the user differentiates (that's how two self-critiques coexist).
+  // The agent's directory (prompt + config) travels with the rename via the
+  // renames map, consumed by the scaffolder on save.
   function tryRename(oldName, v) {
     v = (v || '').trim();
     if (v === (state.graph.nodes[oldName].label || oldName)) return;
@@ -1599,7 +1601,11 @@ const PAGE_JS = `
     }
     pushHistory('rename');
     state.graph.nodes[oldName].label = v;
-    if (slug !== oldName) renameNode(oldName, slug);
+    if (slug !== oldName) {
+      if (!state.graph.renames) state.graph.renames = {};
+      state.graph.renames[slug] = oldName; // scaffolder moves agents/<old>/ → agents/<new>/
+      renameNode(oldName, slug);
+    }
     markDirty(); render(); inspect();
   }
   function commitInput(value, oncommit) {
@@ -2084,6 +2090,7 @@ const PAGE_JS = `
       toast(nstr(fromYaml ? 'savedYamlFilesOne' : 'savedFilesOne', fromYaml ? 'savedYamlFilesMany' : 'savedFilesMany', (r.body.rebuilt || []).length), 'ok');
     }
     showProblems([], r.body.warnings);
+    (r.body.purged || []).forEach(function (p) { toast('ghost agent removed from the runtime: ' + p, 'warn'); });
     if (fromYaml) { state.selected = null; render(); inspect(); } // graph was replaced — drop the stale selection
     // new agents may exist now — refresh the roster so the inspector knows
     api('/api/model').then(function (m) {

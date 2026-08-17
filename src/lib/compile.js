@@ -588,6 +588,29 @@ function compile(core, targetDir, { global: isGlobal = false, target = 'claude',
     manifest.files[rel] = sha256(read(abs));
   };
 
+  // The graph is the source of truth: only nodes in it are compiled. Agents
+  // lingering in .rensei/agents/ after a node was deleted (or renamed away)
+  // are GHOSTS — they must not reach the runtime. on_demand helpers are the
+  // only exception (sentinel: outside the loop, invocable standalone).
+  const fs = require('fs');
+  const graphAgents = new Set();
+  for (const [id, node] of Object.entries(core.graph.nodes || {})) {
+    if (!node.terminal) graphAgents.add(id);
+  }
+  const onDemand = new Set();
+  for (const [name, { def }] of core.agents) {
+    if (def && def.on_demand) onDemand.add(name);
+  }
+  const liveAgents = new Map();
+  for (const [name, agent] of core.agents) {
+    if (graphAgents.has(name) || onDemand.has(name)) liveAgents.set(name, agent);
+  }
+  const ghosts = [];
+  for (const [name, agent] of core.agents) {
+    if (!liveAgents.has(name)) ghosts.push({ name, agent });
+  }
+  const purged = [];
+
   for (const t of targets) {
     // claude → .claude/{agents,commands,rules} · opencode → .opencode/{agents,commands,rule}
     // (opencode uses PLURAL for agents/commands, singular for rule — per its docs)
@@ -598,11 +621,17 @@ function compile(core, targetDir, { global: isGlobal = false, target = 'claude',
     const rulesDir = isOpen ? path.join(base, 'rule') : path.join(base, 'rules');
     const rt = runtime || RUNTIME_OF_TARGET[t] || core.config.RUNTIME || 'claude';
 
-    // 1. agents
-    for (const [name, agent] of core.agents) {
+    // 1. agents — graph-scoped; ghosts are REMOVED from the runtime dirs so
+    //    deleted agents stop existing everywhere at once
+    for (const [name, agent] of liveAgents) {
       const file = path.join(agentsDir, `${name}.md`);
       write(file, compileAgent(name, agent, core, { target: t, runtime: rt }));
       written.push(file);
+    }
+    for (const g of ghosts) {
+      for (const ghost of [path.join(agentsDir, `${g.name}.md`), path.join(agentsDir, `${g.name}.yaml`)]) {
+        if (exists(ghost)) { fs.rmSync(ghost); purged.push(toPosix(path.relative(targetDir, ghost))); }
+      }
     }
 
     // 2. commands — with a description frontmatter (both runtimes show it in
@@ -661,7 +690,10 @@ function compile(core, targetDir, { global: isGlobal = false, target = 'claude',
   const mdActions = [];
   if (targets.includes('claude')) mdActions.push('CLAUDE.md updated (managed block)');
   if (targets.some(t => t === 'opencode' || t === 'codex')) mdActions.push('AGENTS.md updated (managed block)');
-  return { written, claudeMdAction: mdActions.join(' · ') };
+  const out = { written, claudeMdAction: mdActions.join(' · ') };
+  if (purged.length) out.purged = purged;
+  if (ghosts.length) out.ghostsInRensei = ghosts.map(g => g.name); // .rensei/agents/ dirs kept (user data)
+  return out;
 }
 
 module.exports = { compile, compileAgent, compileKata, compileRenseiDoc, flowChain, checkDrift, driftWarnings };

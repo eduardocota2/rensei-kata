@@ -68,6 +68,7 @@ function scaffoldAgents(coreDir, graph) {
   const agentsDir = path.join(coreDir, 'agents');
   const created = [];
   const seededFrom = {};
+  const renamed = [];
   let mutated = false;
 
   for (const [id, node] of Object.entries(graph.nodes || {})) {
@@ -79,6 +80,17 @@ function scaffoldAgents(coreDir, graph) {
     }
     const dir = path.join(agentsDir, id);
     if (exists(dir)) continue;
+
+    // RENAMED agent: if a renames map (maintained by the studio) points at
+    // an old id with a directory, MOVE it — the brain travels with the name
+    if (graph.renames && graph.renames[id] && exists(path.join(agentsDir, graph.renames[id]))) {
+      const from = graph.renames[id];
+      fs.renameSync(path.join(agentsDir, from), dir);
+      delete graph.renames[id];
+      mutated = true;
+      renamed.push({ from, to: id });
+      continue;
+    }
 
     ensureDir(dir);
     const base = node.based_on && !node.terminal ? String(node.based_on) : null;
@@ -111,7 +123,7 @@ function scaffoldAgents(coreDir, graph) {
       mutated = true;
     }
   }
-  return { created, seededFrom, mutated };
+  return { created, seededFrom, renamed, mutated };
 }
 
 module.exports = { scaffoldAgents, slug };

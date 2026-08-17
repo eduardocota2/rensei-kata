@@ -9,11 +9,27 @@ skills: []
 triggers:
   es:
     - cumple con la spec
+    - cumple la especificación
     - revisa contra la especificación
+    - revisa contra la spec
     - está todo lo que se pidió
     - falta algo del requerimiento
+    - está completo el requerimiento
+    - revisa contra el plan
+    - coincide con lo pedido
+    - faltan tareas del plan
+    - hizo todo lo que se pidió
+    - revisa el cumplimiento
   en:
     - does this meet spec
+    - meets the spec
     - check against the spec
+    - check against the plan
     - is everything implemented
     - anything missing from the requirements
+    - is the requirement complete
+    - does it match the plan
+    - missing tasks from the plan
+    - did it do everything asked
+    - spec compliance
+    - verify against requirements

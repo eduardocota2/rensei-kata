@@ -52,18 +52,27 @@ function startStudio(targetDir, { port = 4789, open = true } = {}) {
     return { core, errors, warnings, issues, drift, driftMessages: driftWarnings(drift) };
   };
 
-  // Shared save path: scaffold new agents, validate the candidate graph; on
-  // success persist + recompile. Returns { status, body }.
+  // Shared save path: validate FIRST (no side effects on failure), then
+  // scaffold new agents, persist and recompile. Returns { status, body }.
   function trySave(graph, rawYamlText, { runtime = null } = {}) {
-    // 0. node = agent: every new node gets its .rensei/agents/<id>/ before
-    //    validation can see it (may consume node.based_on → mutate graph)
+    // 1. validate with a virtual view of the agents the graph NEEDS — the
+    //    scaffold hasn't happened yet, so "no agent" for new nodes is expected
+    //    and never blocks (it becomes a warning here, the scaffold follows)
+    const pre = loadCore(coreDir);
+    const SCAFFOLD_MSG = /will be scaffolded automatically/;
+    const v = validate({ ...pre, graph });
+    const errors = v.errors.filter(e => !SCAFFOLD_MSG.test(e));
+    if (errors.length) {
+      return { status: 422, body: { ok: false, errors, warnings: v.warnings, issues: v.issues } };
+    }
+
+    // 2. NOW scaffold: node = agent (may consume node.based_on → mutate graph)
     const sc = scaffoldAgents(coreDir, graph);
 
     const core = loadCore(coreDir);
-    const candidate = { ...core, graph };
-    const { errors, warnings, issues } = validate(candidate);
-    if (errors.length) {
-      return { status: 422, body: { ok: false, errors, warnings, issues } };
+    const { errors: e2, warnings, issues } = validate({ ...core, graph });
+    if (e2.length) {
+      return { status: 422, body: { ok: false, errors: e2, warnings, issues } };
     }
     if (runtime) {
       const configFile = path.join(coreDir, CONFIG_FILE);
@@ -76,7 +85,18 @@ function startStudio(targetDir, { port = 4789, open = true } = {}) {
       : YAML.stringify(graph, { indent: 2 });
     write(graphFile, yamlOut);
     const fresh = loadCore(coreDir);
-    const { written } = compile(fresh, targetDir, { runtime: runtime || fresh.config.RUNTIME });
+    const { written, purged } = compile(fresh, targetDir, { runtime: runtime || fresh.config.RUNTIME });
+
+    // renamed agents: the source directory is gone, so compile can't see it —
+    // purge the stale compiled artifact by hand
+    const fs = require('fs');
+    const extraPurged = [];
+    for (const rn of sc.renamed || []) {
+      for (const t of ['claude', 'opencode']) {
+        const ghost = path.join(targetDir, t === 'claude' ? '.claude' : '.opencode', 'agents', `${rn.from}.md`);
+        if (fs.existsSync(ghost)) { fs.rmSync(ghost); extraPurged.push(toPosix(path.relative(targetDir, ghost))); }
+      }
+    }
     return {
       status: 200,
       body: {
@@ -84,6 +104,7 @@ function startStudio(targetDir, { port = 4789, open = true } = {}) {
         warnings,
         yamlText: read(graphFile),
         rebuilt: written.map(f => toPosix(path.relative(targetDir, f))),
+        purged: [...(purged || []), ...extraPurged],
         scaffolded: sc.created,
         seededFrom: sc.seededFrom,
       },
