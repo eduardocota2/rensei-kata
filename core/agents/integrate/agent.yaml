@@ -1,0 +1,21 @@
+name: integrate
+alias: kata-integrate
+description: Final phase — full test suite green, git history clean, OpenSpec validated, PR ready. Flags anything needing attention before merge.
+model: balanced
+tools: [Read, Bash]
+standalone: 'kata-integrate "integra X"'
+fragments: [communication]
+skills: []
+triggers:
+  es:
+    - integra
+    - finaliza
+    - prepara el PR
+    - deja listo para merge
+    - cierra el ciclo
+  en:
+    - integrate
+    - finalize
+    - prepare the PR
+    - get this merge-ready
+    - wrap it up

@@ -1,0 +1,19 @@
+name: self-critique
+alias: kata-self-critique
+description: The builder reviews its OWN work before passing it to external review. Must find 2-3+ meaningful issues — zero means it didn't look hard enough.
+model: deep_reasoning
+tools: [Read, Bash, Edit]
+standalone: 'kata-self-critique "autocrítica de X"'
+fragments: [self-critique, communication]
+skills: []
+triggers:
+  es:
+    - autocrítica
+    - critica tu propio código
+    - revisa tu propio trabajo
+    - qué mejorarías de tu código
+  en:
+    - self-critique
+    - critique your own code
+    - review your own work
+    - what would you improve in your code

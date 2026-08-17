@@ -98,8 +98,10 @@
     const colX = col => PAD + col * (NODE_W + COL_GAP);
 
     const manual = graph.positions || {};
-    // out-of-canvas manual positions (e.g. saved before drag clamping) fall back to auto
-    const validManual = p => p && isFinite(p.x) && isFinite(p.y) && p.x >= 0 && p.y >= 0 && p.x < 20000 && p.y < 20000;
+    // the canvas is unbounded: manual positions may go negative — the viewBox
+    // adapts (minX/minY), so dragging past the top-left grows the canvas
+    // exactly like dragging past the bottom-right always did
+    const validManual = p => p && isFinite(p.x) && isFinite(p.y) && Math.abs(p.x) < 100000 && Math.abs(p.y) < 100000;
     const pos = {};
 
     spine.forEach(function (name) {
@@ -137,15 +139,22 @@
       pos[name] = { x: PAD + staged++ * (NODE_W + 24), y: stageY + 40 };
     });
 
-    let maxX = 0, maxY = 0;
+    // bounds over RENDERED positions (auto + manual, negatives included) —
+    // these drive the viewBox, so the graph is always fully visible
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     Object.keys(pos).forEach(function (n) {
+      minX = Math.min(minX, pos[n].x);
+      minY = Math.min(minY, pos[n].y);
       maxX = Math.max(maxX, pos[n].x + sizeOf(graph, n).w);
       maxY = Math.max(maxY, pos[n].y + NODE_H);
     });
+    if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 100; maxY = 100; }
+    const bx0 = minX - PAD, by0 = minY - PAD;
     return {
       pos, backEdges, spine, spineRow, spineCol, wrap,
-      width: maxX + PAD + 96,
-      height: maxY + PAD + 90,
+      minX: bx0, minY: by0, maxX, maxY,
+      width: maxX - bx0 + PAD + 96,
+      height: maxY - by0 + PAD + 90,
     };
   }
 
@@ -181,13 +190,26 @@
     return s.length > n ? s.slice(0, n - 1) + '…' : s;
   }
 
-  function labelPill(cx, cy, text, cls) {
-    // display text is truncated; the full condition rides in <title> (hover)
+  function labelPill(cx, cy, text, cls, anchor) {
+    // display text is truncated; the full condition rides in <title> (hover).
+    // anchor {ax, ay} = on-path point: a short dotted leader ties the pill
+    // to ITS arrow — same color as the edge class — so ownership reads at a glance
     const w = trunc(text).length * 5.8 + 16;
     const h = 17;
+    let lead = '';
+    if (anchor && isFinite(anchor.ax) && isFinite(anchor.ay)) {
+      const dx = anchor.ax - cx, dy = anchor.ay - cy;
+      if (Math.hypot(dx, dy) > 3) {
+        // land on the pill edge nearest to the anchor
+        const ex = Math.abs(dx) > w / 2 ? cx + Math.sign(dx) * w / 2 : cx;
+        const ey = Math.abs(dy) > h / 2 ? cy + Math.sign(dy) * h / 2 : cy;
+        lead = `<line class="label-lead" x1="${ex}" y1="${ey}" x2="${anchor.ax}" y2="${anchor.ay}"/>`;
+      }
+    }
     return (
       `<g class="label-pill ${cls || ''}">` +
       `<title>${esc(text)}</title>` +
+      lead +
       `<rect x="${cx - w / 2}" y="${cy - h / 2}" width="${w}" height="${h}" rx="${h / 2}"/>` +
       `<text x="${cx}" y="${cy + 3.5}" text-anchor="middle">${esc(trunc(text))}</text>` +
       `</g>`
@@ -208,25 +230,27 @@
 
   // --- render ------------------------------------------------------------------
   // midpoint of a polyline + orientation of the segment it lands on — pills
-  // anchor to the routed path, never to a cached row coordinate
-  function pathAnchor(pts) {
+  // anchor to the routed path, never to a cached row coordinate. frac lets the
+  // caller probe other spots along the path (label collision avoidance).
+  function pathAnchor(pts, frac) {
+    const f = frac === undefined ? 0.5 : frac;
     let total = 0;
     const segs = [];
     for (let i = 1; i < pts.length; i++) {
       const len = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
       segs.push(len); total += len;
     }
-    let half = total / 2;
+    let want = total * f;
     for (let i = 0; i < segs.length; i++) {
-      if (half <= segs[i] || i === segs.length - 1) {
+      if (want <= segs[i] || i === segs.length - 1) {
         const p0 = pts[i], p1 = pts[i + 1];
-        const t = segs[i] ? Math.min(1, half / segs[i]) : 0;
+        const t = segs[i] ? Math.min(1, want / segs[i]) : 0;
         return {
           x: p0.x + (p1.x - p0.x) * t, y: p0.y + (p1.y - p0.y) * t,
           horizontal: Math.abs(p1.y - p0.y) <= Math.abs(p1.x - p0.x),
         };
       }
-      half -= segs[i];
+      want -= segs[i];
     }
     return { x: pts[0].x, y: pts[0].y, horizontal: true };
   }
@@ -255,9 +279,67 @@
 
     const feedsBranch = n => (graph.edges || []).some(e => e.from === n && !onSpine(e.to));
 
-    // Every edge is a list of waypoints first, a path string second. Aligned
-    // endpoints get a straight segment; misaligned endpoints BEND orthogonally
-    // (14px rounded corners) — a diagonal straight line never ships.
+    // Label placement with collision avoidance: probe spots along the path
+    // (center first, then outward) and take the first that clears both node
+    // boxes — pills never sit on top of the components they annotate. Returns
+    // the on-path anchor too, so a leader line can tie pill to its arrow.
+    function labelSpot(text, pts, e) {
+      const w = trunc(text).length * 5.8 + 16;
+      const h = 17;
+      const boxes = [];
+      for (const n of [e.from, e.to]) {
+        if (!(n in pos)) continue;
+        const s = size(n);
+        boxes.push({ x: pos[n].x - 6, y: pos[n].y - 6, w: s.w + 12, h: s.h + 12 });
+      }
+      const hits = (cx, cy) => boxes.some(r =>
+        cx + w / 2 > r.x && cx - w / 2 < r.x + r.w && cy + h / 2 > r.y && cy - h / 2 < r.y + r.h);
+      for (const frac of [0.5, 0.62, 0.38, 0.7, 0.3, 0.8, 0.2]) {
+        const an = pathAnchor(pts, frac);
+        const cx = an.horizontal ? an.x : an.x + 14;
+        const cy = an.horizontal ? an.y - 14 : an.y;
+        if (!hits(cx, cy)) return { x: cx, y: cy, ax: an.x, ay: an.y };
+      }
+      // nodes very close — float the pill clear above the pair
+      const mid = pathAnchor(pts, 0.5);
+      return { x: mid.x, y: Math.min(...boxes.map(b => b.y)) - 14, ax: mid.x, ay: mid.y };
+    }
+
+    // nearest-port machinery: side midpoints + proximity pick
+    const portsOf = n => {
+      const p = pos[n], s = size(n);
+      return {
+        l: { x: p.x, y: p.y + s.h / 2 },
+        r: { x: p.x + s.w, y: p.y + s.h / 2 },
+        t: { x: p.x + s.w / 2, y: p.y },
+        b: { x: p.x + s.w / 2, y: p.y + s.h },
+      };
+    };
+    const centerOf = n => {
+      const p = pos[n], s = size(n);
+      return { x: p.x + s.w / 2, y: p.y + s.h / 2 };
+    };
+    const nearestSide = (ports, target) => {
+      let best = 'l', d = Infinity;
+      for (const k of ['l', 'r', 't', 'b']) {
+        const dd = Math.hypot(ports[k].x - target.x, ports[k].y - target.y);
+        if (dd < d) { d = dd; best = k; }
+      }
+      return best;
+    };
+    // pull the endpoint 7px back along the port normal so the arrowhead
+    // lands at the border instead of inside the card
+    const endFor = (b, side) => {
+      if (side === 'l') return { x: b.x - 7, y: b.y };
+      if (side === 'r') return { x: b.x + 7, y: b.y };
+      if (side === 't') return { x: b.x, y: b.y - 7 };
+      return { x: b.x, y: b.y + 7 };
+    };
+
+    // Every edge is a list of waypoints first, a path string second. ENDPOINTS
+    // ATTACH AT THE NEAREST PORT: for each end, the side midpoint closest to
+    // the other end — so rewiring lands the tail where the arrow actually
+    // points, and manual positions never produce backwards stubs.
     (graph.edges || []).forEach(function (e, i) {
       if (!(e.from in pos) || !(e.to in pos)) return;
       const inter = opts.interactive ? ` data-edge="${i}" tabindex="0" role="button" aria-label="transition ${esc(e.from)} to ${esc(e.to)}"` : '';
@@ -265,8 +347,7 @@
       const label = [e.when, e.max !== undefined && e.max !== null && e.max !== '' ? '≤' + resolveVar(e.max, config) + '×' : null]
         .filter(Boolean).join(' · ');
 
-      let pts, cls, marker, labelX, labelY, a, b;
-      const bothSpine = onSpine(e.from) && onSpine(e.to);
+      let pts, cls, marker, labelX, labelY, labelAx, labelAy, a, b;
 
       if (L.backEdges.has(e)) {
         // the correction loop: out the bottom, down to a dip, up the right
@@ -275,68 +356,42 @@
         a = portB(e.from);
         b = portT(e.to);
         const dip = Math.max(a.y, b.y) + 46;
-        const margin = L.width - PAD - 40;
+        const margin = L.maxX + 56;
         const aboveY = pos[e.to].y - 30;
         pts = [a, { x: a.x, y: dip }, { x: margin, y: dip }, { x: margin, y: aboveY }, { x: b.x, y: aboveY }, { x: b.x, y: b.y - 7 }];
         cls = ' back'; marker = 'rkArrowBack';
-        labelX = (a.x + margin) / 2; labelY = dip;
-        usePort(e.from, 'b'); usePort(e.to, 't');
-      } else if (bothSpine && L.spineRow[e.from] === L.spineRow[e.to]) {
-        const forward = portR(e.from).x < portL(e.to).x;
-        a = forward ? portR(e.from) : portL(e.from);
-        b = forward ? portL(e.to) : portR(e.to);
-        const skip = feedsBranch(e.from);
-        cls = (isLoop ? ' back' : '') + (skip ? ' skip' : '');
-        marker = isLoop ? 'rkArrowBack' : skip ? 'rkArrowSkip' : 'rkArrow';
-        const end = { x: b.x + (forward ? -7 : 7), y: b.y };
-        if (Math.abs(a.y - b.y) < 2) {
-          pts = [a, end];
-          // aligned: the pill floats above the row — it is wider than the column gap
-          labelX = (a.x + b.x) / 2; labelY = Math.min(pos[e.from].y, pos[e.to].y) - 14;
-        } else {
-          const midX = (a.x + b.x) / 2;
-          pts = [a, { x: midX, y: a.y }, { x: midX, y: b.y }, end];
-          const an = pathAnchor(pts);
-          labelX = an.horizontal ? an.x : an.x + 14;
-          labelY = an.horizontal ? an.y - 14 : an.y;
-        }
-        usePort(e.from, forward ? 'r' : 'l'); usePort(e.to, forward ? 'l' : 'r');
-      } else if (bothSpine) {
-        a = portB(e.from);
-        b = portT(e.to);
-        cls = isLoop ? ' back' : ''; marker = isLoop ? 'rkArrowBack' : 'rkArrow';
-        const end = { x: b.x, y: b.y - 7 };
-        if (Math.abs(a.x - b.x) < 2) {
-          pts = [a, end];
-        } else {
-          const midY = (a.y + b.y) / 2;
-          pts = [a, { x: a.x, y: midY }, { x: b.x, y: midY }, end];
-        }
-        const an = pathAnchor(pts);
-        labelX = an.horizontal ? an.x : an.x + 14;
-        labelY = an.horizontal ? an.y - 14 : an.y;
+        labelX = (a.x + margin) / 2; labelY = dip; labelAx = labelX; labelAy = dip;
         usePort(e.from, 'b'); usePort(e.to, 't');
       } else {
-        const off = onSpine(e.from) ? e.to : e.from;
-        const lane = laneOf(graph, off);
-        if (!onSpine(e.from)) {
-          a = portR(e.from); b = portT(e.to);
-          pts = [a, { x: b.x, y: a.y }, { x: b.x, y: b.y - 7 }];
-          usePort(e.from, 'r'); usePort(e.to, 't');
-        } else if (lane === -1) {
-          a = portT(e.from); b = portL(e.to);
-          pts = [a, { x: a.x, y: b.y }, { x: b.x - 7, y: b.y }];
-          usePort(e.from, 't'); usePort(e.to, 'l');
+        const portsA = portsOf(e.from), portsB = portsOf(e.to);
+        const sideA = nearestSide(portsA, centerOf(e.to));
+        const sideB = nearestSide(portsB, centerOf(e.from));
+        a = portsA[sideA];
+        b = portsB[sideB];
+        usePort(e.from, sideA); usePort(e.to, sideB);
+
+        const skip = feedsBranch(e.from) || !onSpine(e.from) || !onSpine(e.to);
+        cls = (isLoop ? ' back' : '') + (skip ? ' skip' : '');
+        marker = isLoop ? 'rkArrowBack' : skip ? 'rkArrowSkip' : 'rkArrow';
+
+        const end = endFor(b, sideB);
+        const hA = sideA === 'l' || sideA === 'r';
+        const hB = sideB === 'l' || sideB === 'r';
+        if (Math.abs(a.x - b.x) < 2 || Math.abs(a.y - b.y) < 2) {
+          pts = [a, end];
+        } else if (hA && hB) {
+          const midX = (a.x + b.x) / 2;
+          pts = [a, { x: midX, y: a.y }, { x: midX, y: b.y }, end];
+        } else if (!hA && !hB) {
+          const midY = (a.y + b.y) / 2;
+          pts = [a, { x: a.x, y: midY }, { x: b.x, y: midY }, end];
+        } else if (hA) {
+          pts = [a, { x: b.x, y: a.y }, end];
         } else {
-          a = portB(e.from); b = portT(e.to);
-          pts = Math.abs(a.x - b.x) < 2 ? [a, { x: b.x, y: b.y - 7 }]
-            : [a, { x: a.x, y: b.y }, { x: b.x, y: b.y - 7 }];
-          usePort(e.from, 'b'); usePort(e.to, 't');
+          pts = [a, { x: a.x, y: b.y }, end];
         }
-        cls = isLoop ? ' back' : ' skip'; marker = isLoop ? 'rkArrowBack' : 'rkArrowSkip';
-        const an = pathAnchor(pts);
-        labelX = an.horizontal ? an.x : an.x + 14;
-        labelY = an.horizontal ? an.y - 14 : an.y;
+        const lp = labelSpot(label, pts, e);
+        labelX = lp.x; labelY = lp.y; labelAx = lp.ax; labelAy = lp.ay;
       }
 
       edgeEnds[i] = { a, b };
@@ -350,7 +405,8 @@
         (opts.interactive ? `<path class="hit" d="${d}"/>` : '') +
         `</g>`
       );
-      if (label) pills.push(labelPill(labelX, labelY, label, cls.trim().split(' ').pop() || ''));
+      // the pill inherits its arrow's color and leans on it with a leader
+      if (label) pills.push(labelPill(labelX, labelY, label, cls.trim().split(' ').pop() || '', { ax: labelAx, ay: labelAy }));
     });
 
     function portsFor(name, h, w) {
@@ -402,7 +458,7 @@
       const chipEffort = metaChip(x + 13 + chipModel.w + 6, y + 76, effort);
 
       nodes.push(
-        `<g class="${cls}"${inter(`node ${esc(node.label || name)}, agent ${esc(node.agent || '?')}`)}>` +
+        `<g class="${cls}"${inter(`node ${esc(node.label || name)}, agent ${esc(name)}`)}>` +
         `<rect class="card" x="${x}" y="${y}" width="${NODE_W}" height="${NODE_H}" rx="8"/>` +
         // header band: square bottom, rounded top (card clips it)
         `<path class="band" d="M ${x} ${y + 8} Q ${x} ${y} ${x + 8} ${y} L ${x + NODE_W - 8} ${y} Q ${x + NODE_W} ${y} ${x + NODE_W} ${y + 8} L ${x + NODE_W} ${y + BAND_H} L ${x} ${y + BAND_H} Z"/>` +
@@ -414,7 +470,7 @@
           : `<text class="seq-num" x="${x + 22}" y="${y + 19}">${esc(String(seq[name]).padStart(2, '0'))}</text>`) +
         `<text class="node-label" x="${x + 40}" y="${y + 20}">${esc(trunc(node.label || name, labelMaxChars))}</text>` +
         (flag ? `<text class="node-flag${isEntry ? ' entry' : ''}" x="${x + NODE_W - 12}" y="${y + 20}" text-anchor="end">${flag}</text>` : '') +
-        `<text class="node-agent" x="${x + 13}" y="${y + 50}">@${esc(node.agent || '?')}</text>` +
+        `<text class="node-agent" x="${x + 13}" y="${y + 50}">@${esc(node.terminal ? '?' : name)}</text>` +
         (node.summary ? `<text class="node-summary" x="${x + 13}" y="${y + 66}">${esc(trunc(node.summary, SUMMARY_MAX))}</text>` : '') +
         chipModel.markup + chipEffort.markup +
         portsFor(name, NODE_H, NODE_W) +
@@ -425,9 +481,11 @@
     return {
       width: L.width,
       height: L.height,
+      minX: L.minX,
+      minY: L.minY,
       ends: edgeEnds,
       markup:
-        `<svg class="rk-graph" width="${L.width}" height="${L.height}" viewBox="0 0 ${L.width} ${L.height}" ${opts.interactive ? 'role="group" aria-label="rensei loop graph editor"' : 'role="img" aria-label="rensei loop graph"'}>` +
+        `<svg class="rk-graph" width="${L.width}" height="${L.height}" viewBox="${L.minX} ${L.minY} ${L.width} ${L.height}" ${opts.interactive ? 'role="group" aria-label="rensei loop graph editor"' : 'role="img" aria-label="rensei loop graph"'}>` +
         `<defs>` +
         `<filter id="rkShadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="2.5" flood-opacity="0.12"/></filter>` +
         `<pattern id="rkGrid" width="26" height="26" patternUnits="userSpaceOnUse"><circle cx="1.5" cy="1.5" r="1.2" class="grid-dot"/></pattern>` +
@@ -435,7 +493,8 @@
         `<marker id="rkArrowBack" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="arrow-fill-back"/></marker>` +
         `<marker id="rkArrowSkip" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 z" class="arrow-fill-skip"/></marker>` +
         `</defs>` +
-        `<rect class="grid" x="0" y="0" width="${L.width}" height="${L.height}" fill="url(#rkGrid)"/>` +
+        `<rect class="bg" x="${L.minX}" y="${L.minY}" width="${L.width}" height="${L.height}"/>` +
+        `<rect class="grid" x="${L.minX}" y="${L.minY}" width="${L.width}" height="${L.height}" fill="url(#rkGrid)"/>` +
         edges.join('\n') + '\n' + nodes.join('\n') + '\n' + pills.join('\n') +
         `</svg>`,
     };

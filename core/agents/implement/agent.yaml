@@ -1,0 +1,33 @@
+name: implement
+alias: kata-implement
+description: Executes the plan with TDD — test → fail → implement → pass → commit. Asks before committing.
+model: routine
+tools: [Read, Write, Edit, Bash]
+standalone: 'kata-implement "implementa Y"'
+fragments: [communication]
+skills: []
+triggers:
+  es:
+    - escribe
+    - construye
+    - programa
+    - implementa
+    - codifica
+    - escribe el código
+    - haz que funcione
+    - desarrolla
+    - agrega
+    - añade
+    - crea
+  en:
+    - write
+    - build it
+    - code it up
+    - implement
+    - code
+    - write the code for
+    - build
+    - make it work
+    - develop
+    - add
+    - create

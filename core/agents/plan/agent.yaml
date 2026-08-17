@@ -1,0 +1,46 @@
+name: plan
+alias: kata-plan
+description: Turns analyzed requirements into bite-sized TDD tasks with exact paths and exact commands. Never writes implementation code.
+model: balanced
+tools: [Read, Bash, WebSearch, WebFetch]
+standalone: 'kata-plan "planea Y"'
+fragments: [communication]
+skills: [artifact-diagramming]
+triggers:
+  es:
+    - plan
+    - planea
+    - planifica
+    - tareas para
+    - genera un plan
+    - planea esto
+    - tasks para
+    - cómo implementarías
+    - hazme un plan
+    - crea los tickets
+    - divide en tareas
+    - estructura esto
+    - qué archivos tocar
+    - roadmap de implementación
+    - pasos para construir
+    - organiza el trabajo
+    - qué commits harías
+    - orden de implementación
+  en:
+    - plan
+    - plan it out
+    - task list for
+    - generate a plan
+    - plan this
+    - tasks for
+    - how would you implement
+    - make a plan
+    - create tickets
+    - break into tasks
+    - structure this
+    - what files to touch
+    - implementation roadmap
+    - steps to build
+    - organize the work
+    - what commits
+    - implementation order

@@ -1,6 +1,6 @@
 {
   "name": "rensei-kata",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "rensei (錬成) + kata (型): a graph-driven AI engineering loop. One source of truth — the graph — compiles to agents, commands and docs for Claude Code and OpenCode.",
   "keywords": ["claude-code", "agents", "workflow", "ai-engineering", "opencode", "methodology"],
   "license": "MIT",

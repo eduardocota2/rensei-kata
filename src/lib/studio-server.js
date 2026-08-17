@@ -3,18 +3,21 @@
 // BEFORE touching disk, and a successful save recompiles all artifacts.
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
 const { exec } = require('child_process');
 const YAML = require('yaml');
-const { read, write, log, toPosix } = require('./util');
+const { read, write, exists, log, toPosix } = require('./util');
 const { findCoreDir, loadCore } = require('./load');
-const { validate } = require('./validate');
+const { validate, tierTableFor, runtimesOf } = require('./validate');
 const { compile, checkDrift, driftWarnings } = require('./compile');
-const { route } = require('./route');
+const { scaffoldAgents } = require('./scaffold');
 const { renderSvg } = require('./graph-render');
 const graphCss = require('./graph-css');
+const exportCss = require('./graph-export-css');
 const { studioPage } = require('./studio-page');
 
 const GRAPH_RENDER_JS = path.join(__dirname, 'graph-render.js');
+const CONFIG_FILE = 'rensei.config.yaml';
 
 function send(res, status, body, type = 'application/json') {
   const data = typeof body === 'string' ? body : JSON.stringify(body);
@@ -49,18 +52,31 @@ function startStudio(targetDir, { port = 4789, open = true } = {}) {
     return { core, errors, warnings, issues, drift, driftMessages: driftWarnings(drift) };
   };
 
-  // Shared save path: validate a candidate graph; on success persist + recompile.
-  // Returns { status, body }.
-  function trySave(graph, rawYamlText) {
+  // Shared save path: scaffold new agents, validate the candidate graph; on
+  // success persist + recompile. Returns { status, body }.
+  function trySave(graph, rawYamlText, { runtime = null } = {}) {
+    // 0. node = agent: every new node gets its .rensei/agents/<id>/ before
+    //    validation can see it (may consume node.based_on → mutate graph)
+    const sc = scaffoldAgents(coreDir, graph);
+
     const core = loadCore(coreDir);
     const candidate = { ...core, graph };
     const { errors, warnings, issues } = validate(candidate);
     if (errors.length) {
       return { status: 422, body: { ok: false, errors, warnings, issues } };
     }
-    write(graphFile, rawYamlText !== undefined ? rawYamlText : YAML.stringify(graph, { indent: 2 }));
+    if (runtime) {
+      const configFile = path.join(coreDir, CONFIG_FILE);
+      const cfg = YAML.parse(read(configFile));
+      cfg.RUNTIME = runtime;
+      write(configFile, YAML.stringify(cfg));
+    }
+    const yamlOut = rawYamlText !== undefined && !sc.mutated
+      ? rawYamlText
+      : YAML.stringify(graph, { indent: 2 });
+    write(graphFile, yamlOut);
     const fresh = loadCore(coreDir);
-    const { written } = compile(fresh, targetDir, {});
+    const { written } = compile(fresh, targetDir, { runtime: runtime || fresh.config.RUNTIME });
     return {
       status: 200,
       body: {
@@ -68,6 +84,8 @@ function startStudio(targetDir, { port = 4789, open = true } = {}) {
         warnings,
         yamlText: read(graphFile),
         rebuilt: written.map(f => toPosix(path.relative(targetDir, f))),
+        scaffolded: sc.created,
+        seededFrom: sc.seededFrom,
       },
     };
   }
@@ -82,29 +100,55 @@ function startStudio(targetDir, { port = 4789, open = true } = {}) {
       if (req.method === 'GET' && url.pathname === '/graph-render.js') {
         return send(res, 200, read(GRAPH_RENDER_JS), 'text/javascript');
       }
-    if (req.method === 'GET' && url.pathname === '/api/model') {
-      const st = loadState();
-      return send(res, 200, {
-        graph: st.core.graph,
-        config: st.core.config,
-        agents: [...st.core.agents].map(([name, a]) => ({ name, skills: a.def.skills || [] })),
-        yamlText: read(graphFile),
-        errors: st.errors,
-        warnings: st.warnings,
-        issues: st.issues,
-        drift: st.driftMessages,
-        coreDir: toPosix(coreDir),
-      });
-    }
+      if (req.method === 'GET' && url.pathname === '/api/model') {
+        const st = loadState();
+        const runtime = st.core.config.RUNTIME || runtimesOf(st.core.config)[0] || 'claude';
+        return send(res, 200, {
+          graph: st.core.graph,
+          config: st.core.config,
+          agents: [...st.core.agents].map(([name, a]) => ({ name, skills: a.def.skills || [] })),
+          yamlText: read(graphFile),
+          errors: st.errors,
+          warnings: st.warnings,
+          issues: st.issues,
+          drift: st.driftMessages,
+          runtime,
+          runtimes: runtimesOf(st.core.config),
+          models: tierTableFor(st.core.config, 'model', runtime),
+          efforts: tierTableFor(st.core.config, 'effort', runtime),
+          coreDir: toPosix(coreDir),
+        });
+      }
       if (req.method === 'POST' && url.pathname === '/api/model') {
-        const { graph } = JSON.parse(await readBody(req));
-        const r = trySave(graph);
+        const { graph, runtime } = JSON.parse(await readBody(req));
+        const r = trySave(graph, undefined, { runtime: runtime || null });
         return send(res, r.status, r.body);
       }
       // Convert JSON model → YAML text without saving (keeps the YAML pane in sync).
       if (req.method === 'POST' && url.pathname === '/api/to-yaml') {
         const { graph } = JSON.parse(await readBody(req));
         return send(res, 200, { text: YAML.stringify(graph, { indent: 2 }) });
+      }
+      // Prompt editor: read/write .rensei/agents/<id>/prompt.md directly.
+      // GET returns the text (or null for not-yet-scaffolded agents); PUT
+      // writes it — the next Save/rebuild propagates it into compiled agents.
+      const promptMatch = url.pathname.match(/^\/api\/prompt\/([a-z0-9-]+)$/);
+      if (promptMatch) {
+        const agentId = promptMatch[1];
+        const promptFile = path.join(coreDir, 'agents', agentId, 'prompt.md');
+        if (!exists(promptFile)) {
+          if (req.method === 'GET') return send(res, 200, { ok: true, prompt: null, scaffolded: false });
+          return send(res, 404, { ok: false, errors: [`agent "${agentId}" is not scaffolded yet — Save the graph first`] });
+        }
+        if (req.method === 'GET') {
+          return send(res, 200, { ok: true, prompt: read(promptFile), scaffolded: true });
+        }
+        if (req.method === 'PUT') {
+          const { prompt } = JSON.parse(await readBody(req));
+          if (typeof prompt !== 'string') return send(res, 422, { ok: false, errors: ['missing "prompt" string'] });
+          write(promptFile, prompt.endsWith('\n') ? prompt : prompt + '\n');
+          return send(res, 200, { ok: true, saved: true });
+        }
       }
       // Parse + validate raw YAML without saving (YAML pane → visual preview).
       if (req.method === 'POST' && url.pathname === '/api/parse-yaml') {
@@ -119,20 +163,30 @@ function startStudio(targetDir, { port = 4789, open = true } = {}) {
           return send(res, 422, { ok: false, errors: ['Valid YAML, but not a rensei graph (missing "nodes")'], warnings: [], issues: { errors: [], warnings: [] } });
         }
         const core = loadCore(coreDir);
-        const { errors, warnings, issues } = validate({ ...core, graph });
+        const v = validate({ ...core, graph });
+        // preview-only: "agent will be scaffolded on save" never blocks applying
+        // the text to the canvas — the scaffold happens on save
+        const SCAFFOLD_MSG = /will be scaffolded automatically/;
+        const errors = v.errors.filter(e => !SCAFFOLD_MSG.test(e));
+        const warnings = [...v.warnings, ...v.errors.filter(e => SCAFFOLD_MSG.test(e))];
+        const issues = {
+          errors: (v.issues.errors || []).filter(i => !SCAFFOLD_MSG.test(i.message)),
+          warnings: [...(v.issues.warnings || []), ...(v.issues.errors || []).filter(i => SCAFFOLD_MSG.test(i.message))],
+        };
         return send(res, errors.length ? 422 : 200, { ok: !errors.length, graph, errors, warnings, issues });
       }
-      // kata routing simulator — deterministic trigger matching, no tokens spent.
-      if (req.method === 'POST' && url.pathname === '/api/route') {
-        const { text } = JSON.parse(await readBody(req));
-        const core = loadCore(coreDir);
-        return send(res, 200, route(core, text));
-      }
+
       // standalone SVG of the current graph on disk (export → .svg / rasterize → .png)
+      // The root MUST carry class="rk-graph" — the token block targets that
+      // selector; without it every var(--rk-*) is undefined and the export
+      // renders as a black blob.
       if (req.method === 'GET' && url.pathname === '/api/export.svg') {
+        const theme = url.searchParams.get('theme');
+        const tokens = theme === 'light' ? exportCss.LIGHT : theme === 'dark' ? exportCss.DARK : exportCss.AUTO;
         const core = loadCore(coreDir);
         const { markup, width, height } = renderSvg(core.graph, core.config, {});
-        const svg = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">\n<style>${graphCss}</style>\n${markup.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '')}</svg>`;
+        const viewBox = markup.match(/viewBox="([^"]+)"/)[1];
+        const svg = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" class="rk-graph" width="${width}" height="${height}" viewBox="${viewBox}">\n<style>${tokens}\n${graphCss}</style>\n${markup.replace(/^<svg[^>]*>/, '').replace(/<\/svg>$/, '')}</svg>`;
         return send(res, 200, svg, 'image/svg+xml');
       }
       // Save raw YAML text (YAML pane → disk + recompile).

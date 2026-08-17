@@ -1,0 +1,19 @@
+name: spec-review
+alias: kata-spec-review
+description: Stage 1 review — verifies the implementation matches the original spec EXACTLY. A FAIL stops the line.
+model: balanced
+tools: [Read, Bash]
+standalone: 'kata-spec-review "revisa contra la spec"'
+fragments: [communication]
+skills: []
+triggers:
+  es:
+    - cumple con la spec
+    - revisa contra la especificación
+    - está todo lo que se pidió
+    - falta algo del requerimiento
+  en:
+    - does this meet spec
+    - check against the spec
+    - is everything implemented
+    - anything missing from the requirements

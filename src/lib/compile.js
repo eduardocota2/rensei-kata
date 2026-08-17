@@ -56,27 +56,42 @@ const REFERENCE_BLURBS = {
   'model-routing': 'Which model for which task — profiles, effort guide, cost awareness',
 };
 
-function resolveModel(config, tier) {
-  return (config.MODELS && config.MODELS[tier]) || tier || 'sonnet';
+function resolveModel(config, tier, runtime) {
+  const t = runtimeTable(config, 'MODELS', runtime);
+  return (t && t[tier]) || tier || 'sonnet';
 }
 
-function resolveEffort(config, tier) {
-  return (config.EFFORT && config.EFFORT[tier]) || tier || 'medium';
+function resolveEffort(config, tier, runtime) {
+  const t = runtimeTable(config, 'EFFORT', runtime);
+  return (t && t[tier]) || tier || 'medium';
 }
+
+// MODELS/EFFORT may be flat (one table for every runtime) or nested per
+// runtime ({claude:{...}, codex:{...}}). Resolve to ONE runtime's table.
+function runtimeTable(config, key, runtime) {
+  const raw = config && config[key];
+  if (!raw || typeof raw !== 'object') return raw;
+  const values = Object.values(raw);
+  const nested = values.length > 0 && values.every(v => v && typeof v === 'object');
+  if (!nested) return raw;
+  return raw[runtime] || raw.claude || values[0];
+}
+
+const RUNTIME_OF_TARGET = { claude: 'claude', opencode: 'opencode', codex: 'codex', all: null };
 
 // ---------------------------------------------------------------------------
 // agents
 // ---------------------------------------------------------------------------
 
-function agentLoopRows(agentName, graph, config) {
+function agentLoopRows(agentName, graph, config, runtime) {
   const rows = [];
   for (const [nodeName, node] of Object.entries(graph.nodes)) {
     // terminal nodes may retain phase data (studio keeps it non-destructively) —
     // it is inert: a terminal is never an agent assignment
-    if (node.terminal || node.agent !== agentName) continue;
+    if (node.terminal || nodeName !== agentName) continue;
     const incoming = (graph.edges || []).filter(e => e.to === nodeName && e.when);
     const condition = incoming.map(e => e.when).join(' OR ') || '—';
-    rows.push(`| ${node.label || nodeName} | ${resolveModel(config, node.model)} | ${resolveEffort(config, node.effort)} | ${condition} |`);
+    rows.push(`| ${node.label || nodeName} | ${resolveModel(config, node.model, runtime)} | ${resolveEffort(config, node.effort, runtime)} | ${condition} |`);
   }
   return rows;
 }
@@ -88,7 +103,7 @@ function agentSkillRows(agentName, def, graph, config) {
   const rows = [];
   const seen = new Set();
   for (const [nodeName, node] of Object.entries(graph.nodes)) {
-    if (node.terminal || node.agent !== agentName) continue;
+    if (node.terminal || nodeName !== agentName) continue;
     const skills = node.skills !== undefined ? node.skills : (def.skills || []);
     for (const s of skills) {
       const key = `${nodeName}:${s}`;
@@ -99,8 +114,8 @@ function agentSkillRows(agentName, def, graph, config) {
   }
   // standalone use: agent defaults not bound to any phase
   const bound = new Set();
-  for (const node of Object.values(graph.nodes)) {
-    if (!node.terminal && node.agent === agentName) (node.skills !== undefined ? node.skills : def.skills || []).forEach(s => bound.add(s));
+  for (const [nodeName, node] of Object.entries(graph.nodes)) {
+    if (!node.terminal && nodeName === agentName) (node.skills !== undefined ? node.skills : def.skills || []).forEach(s => bound.add(s));
   }
   for (const s of def.skills || []) {
     if (!bound.has(s) && !seen.has(`standalone:${s}`)) {
@@ -110,26 +125,41 @@ function agentSkillRows(agentName, def, graph, config) {
   return rows;
 }
 
-function compileAgent(name, { def, prompt }, core, target = 'claude') {
+function compileAgent(name, { def, prompt }, core, opts = {}) {
+  const target = opts.target || 'claude';
+  const runtime = opts.runtime || RUNTIME_OF_TARGET[target] || core.config.RUNTIME || 'claude';
   const { graph, config, fragments } = core;
   const lines = [];
   lines.push('---');
   lines.push(`name: ${name}`);
-  if (target === 'opencode') {
+  if (target === 'opencode' || target === 'codex') {
     lines.push('mode: subagent');
     lines.push(`description: ${def.description} Use: ${def.alias}.`);
-    lines.push(`model: ${resolveModel(config, def.model)}`);
+    lines.push(`model: ${resolveModel(config, def.model, runtime)}`);
     if (def.tools && def.tools.length) lines.push(`tools: [${def.tools.map(t => String(t).toLowerCase()).join(', ')}]`);
   } else {
     lines.push(`description: ${def.description} Use: ${def.alias}.`);
-    lines.push(`model: ${resolveModel(config, def.model)}`);
+    lines.push(`model: ${resolveModel(config, def.model, runtime)}`);
     if (def.tools && def.tools.length) lines.push(`tools: [${def.tools.join(', ')}]`);
   }
   lines.push('---');
   lines.push(GENERATED_HEADER);
-  lines.push(interpolate(prompt.trim(), config));
+  // behavior knobs: config declares intents, compilation derives the prompt
+  // fragment agents actually read (a {{BEHAVIOR.commit_step}} in a prompt
+  // resolves to the full instruction line)
+  const ask = !(config.BEHAVIOR && config.BEHAVIOR.ask_before_commit === false);
+  const scope = {
+    ...config,
+    BEHAVIOR: {
+      ...(config.BEHAVIOR || {}),
+      commit_step: ask
+        ? 'ASK before committing — "Ready to commit? [y/n]"; only commit if confirmed, otherwise leave changes uncommitted for review'
+        : 'commit directly, no confirmation needed',
+    },
+  };
+  lines.push(interpolate(prompt.trim(), scope));
 
-  const rows = agentLoopRows(name, graph, config);
+  const rows = agentLoopRows(name, graph, config, runtime);
   if (rows.length) {
     lines.push('\n## Loop Assignment (from rensei.graph.yaml)\n');
     lines.push('| Phase | Model | Effort | Entry condition |');
@@ -177,17 +207,29 @@ function triggerSection(name, def, suffix, triggers) {
 
 const ROUTE_BLURBS = {
   'gate': 'Route here when the user is asking for an **evaluation, decision, or triage**. They want to know what path to take, not to execute anything yet.',
-  'architect (analyze mode)': 'Route here when the user wants to **understand requirements deeply** — clarifying questions, detecting ambiguity, exploring edge cases. NOT asking for a plan yet.',
-  'architect (plan mode)': 'Route here when the user wants a **concrete implementation plan** — tasks, file paths, code structure, estimates.',
-  'builder': 'Route here when the user wants **code written or a bug fixed** — implementation, creation, repair. They want working code as output.',
-  'reviewer': 'Route here when the user wants **code reviewed** — quality check, spec compliance, PR review. They want feedback, not changes.',
+  'analyze': 'Route here when the user wants to **understand requirements deeply** — clarifying questions, detecting ambiguity, exploring edge cases. NOT asking for a plan yet.',
+  'plan': 'Route here when the user wants a **concrete implementation plan** — tasks, file paths, code structure, estimates.',
+  'implement': 'Route here when the user wants **code written** — implementation, creation. They want working code as output.',
+  'self-critique': 'Route here when the user wants work **critiqued by its own author** — find the flaws before anyone else does.',
+  'spec-review': 'Route here when the question is **"does this match the spec?"** — compliance checking against requirements or plan.',
+  'quality': 'Route here when the user wants **code reviewed** — quality check, PR review. They want feedback, not changes.',
+  'correct': 'Route here when the user wants **a bug fixed or review findings applied** — repair work with a clear input list.',
+  'integrate': 'Route here when the user wants work **finished and merge-ready** — full suite, clean history, PR.',
   'sentinel': 'Route here when the user asks about **security** — vulnerabilities, best practices, sensitive data, auth, cryptography.',
   'designer': 'Route here when the user wants **visual design** — screens, UI, mockups, layouts. They want something that looks good.',
 };
 
 function compileKata(core) {
-  const { agents } = core;
+  const { agents, graph } = core;
   const out = [];
+  // kata routes within the USER's workflow: only agents bound to graph nodes
+  // are primary targets; on_demand helpers appear as a suggestions footnote
+  const inGraph = new Set();
+  for (const [id, node] of Object.entries(graph.nodes || {})) {
+    if (!node.terminal) inGraph.add(id);
+  }
+  const loopAgents = [...agents].filter(([name]) => inGraph.has(name));
+  const onDemand = [...agents].filter(([name, { def }]) => !inGraph.has(name) && def && def.on_demand);
   out.push(GENERATED_HEADER);
   out.push(`You are the kata (型) dispatcher for rensei (錬成). Your job is to read what the user needs — in Spanish OR English — and route it to the correct agent automatically.
 
@@ -201,7 +243,7 @@ function compileKata(core) {
 ## Agent Selection Guide — with detailed trigger patterns
 `);
 
-  for (const [name, { def }] of agents) {
+  for (const [name, { def }] of loopAgents) {
     if (def.modes) {
       for (const [mode, m] of Object.entries(def.modes)) {
         const suffix = ` (${mode} mode)`;
@@ -229,12 +271,17 @@ Route here when the user wants **end-to-end development** — the complete loop 
 **English triggers:**
 "full loop", "complete", "end to end", "full feature", "the whole thing", "do it all", "full cycle", "from scratch", "full pipeline", "entire workflow"
 
+${onDemand.length ? `## On-demand helpers (outside the loop)
+
+These agents are NOT phases of the loop — suggest them as an EXTRA step when the request clearly calls for it, never as the primary route:
+${onDemand.map(([name, { def }]) => `- **@${name}** — ${def.description}`).join('\n')}
+` : ''}
 ## Tie-breaking rules
 
-1. If the request mentions BOTH analysis and planning → @architect (it handles both)
-2. If bug + review requested → @builder first, then suggest @reviewer after
-3. If unsure between @gate and @architect → @gate (safer to evaluate first)
-4. If code AND design mentioned → @designer first, then suggest next step
+1. If the request mentions BOTH analysis and planning → @analyze first (it feeds @plan)
+2. If bug + review requested → @correct first, then suggest @quality after
+3. If unsure between @gate and any phase agent → @gate (safer to evaluate first)
+4. If code AND design mentioned → @designer first, then suggest the next loop phase
 5. If truly ambiguous → @gate (it evaluates and recommends the path)
 6. Security-sensitive keywords (auth, payment, token, PII, password) in ANY context → flag to also consider @sentinel
 
@@ -274,25 +321,78 @@ function flowChain(graph) {
   return chain;
 }
 
+// ---------------------------------------------------------------------------
+// /rensei command — the loop RUNNER. Compiled from the graph: the phase
+// program (agents, entry conditions, loop bounds) becomes an execution
+// protocol the session follows, updating .rensei/state.json as it advances.
+// ---------------------------------------------------------------------------
+
+// The user-facing execution program: entry → phases with their gates.
+function runProgram(graph, config) {
+  const L = [];
+  const label = n => (graph.nodes[n] && (graph.nodes[n].label || n)) || n;
+  L.push(`entry: @${graph.entry} — every loop starts here (skip-rules below may shorten the path)`);
+
+  // group: normal path + bounded loops, straight from the edges
+  for (const e of graph.edges || []) {
+    if (!e.when) continue;
+    const max = e.max !== undefined ? ` (bounded: max ${resolveVar(e.max, config)}× — after that, STOP and surface it)` : '';
+    const bounded = e.max !== undefined;
+    L.push(bounded
+      ? `loop: @${e.from} → @${e.to} when: ${e.when}${max}`
+      : `advance: @${e.from} → @${e.to} when: ${e.when}`);
+  }
+  return L;
+}
+
 function compileRenseiCommand(core) {
-  const { graph, agents } = core;
+  const { graph, agents, config } = core;
   const roster = [...agents.keys()].map(a => `@${a}`).join(', ');
+  const program = runProgram(graph, config).map(l => `- ${l}`).join('\n');
+  const skips = (graph['skip-rules'] || []).map(s => `- ${s.when} → path: ${s.path.join(' → ')}`).join('\n');
   return `${GENERATED_HEADER}
-Load the rensei (錬成) methodology into this session.
+Run the rensei (錬成) loop on a task. You are the orchestrator: the graph below is
+your PROGRAM — follow it phase by phase, honoring every gate.
 
-## What to do
-1. Read: .rensei/RENSEI.md (the compiled methodology — config, flow, quality gates)
-2. Confirm agents available: ${roster}
-3. Acknowledge: "rensei loaded. ${agents.size} agents ready. @gate evaluates every request first."
+## Boot (do this first, in order)
+1. Read .rensei/RENSEI.md (config, flow, quality gates) — it is compiled from the same graph.
+2. Start the loop state: \`npx rensei-kata status --start "$ARGUMENTS"\`
+3. Acknowledge: "loop armed. ${agents.size} agents ready. Entry: @${graph.entry}."
 
-The loop: ${flowChain(graph).join(' → ')}
+## The program (from rensei.graph.yaml — the single source of truth)
+${program}
+${skips ? `\n### Skip rules (gate may shorten the path)\n${skips}\n` : ''}
+## Execution protocol — follow exactly
+1. **Enter a phase:** invoke the agent for the current phase with the accumulated
+   context. FIRST action of every phase entry: \`npx rensei-kata status --set <phase-id>\`
+2. **Honor the gates:** a transition only happens when its \`when:\` condition is
+   genuinely met. Do not advance on hope. If a gate needs a decision only the
+   user can make, ASK — do not guess.
+3. **Respect the bounds:** a bounded transition that reached its max is a STOP
+   condition. Surface the failure honestly; never loop silently.
+4. **Carry the context:** each phase receives the previous phase's output
+   (assessment → analysis → plan → …). Never re-ask what a previous phase settled.
+5. **User checkpoints stay:** when a phase's own protocol says to ask (commits,
+   destructive actions), it asks. The loop orchestrates; it does not steamroll.
+6. **Record decisions:** \`npx rensei-kata status --note "…"\` on meaningful gate
+   decisions (level chosen, spec PASS/FAIL, issues found, rework iteration #).
+7. **Finish:** on entering the terminal node, \`npx rensei-kata status --note "loop complete"\`
+   and hand the user the integration summary.
+
+## If the task is trivial
+The entry phase decides. If the assessment says the full path is overkill, follow
+a skip rule (if one matches) or run the shortest honest path — and say which
+phases you skipped and why.
 
 $ARGUMENTS
 `;
 }
 
-function compileRenseiDoc(core) {
+function compileRenseiDoc(core, runtime) {
   const { graph, config, agents } = core;
+  const rt = runtime || config.RUNTIME || 'claude';
+  const modelsTable = runtimeTable(config, 'MODELS', rt) || {};
+  const effortTable = runtimeTable(config, 'EFFORT', rt) || {};
   const L = [];
   L.push(GENERATED_HEADER);
   L.push(`# rensei — Iterative AI Development Framework
@@ -306,11 +406,13 @@ function compileRenseiDoc(core) {
 ## Configuration
 
 \`\`\`yaml
-MODELS:
-${Object.entries(config.MODELS || {}).map(([k, v]) => `  ${k}: ${v}`).join('\n')}
+RUNTIME: ${rt}
 
-EFFORT:
-${Object.entries(config.EFFORT || {}).map(([k, v]) => `  ${k}: ${v}`).join('\n')}
+MODELS (${rt}):
+${Object.entries(modelsTable).map(([k, v]) => `  ${k}: ${v}`).join('\n')}
+
+EFFORT (${rt}):
+${Object.entries(effortTable).map(([k, v]) => `  ${k}: ${v}`).join('\n')}
 
 ITERATIONS:
 ${Object.entries(config.ITERATIONS || {}).map(([k, v]) => `  ${k}: ${v}`).join('\n')}
@@ -337,10 +439,10 @@ ${flowChain(graph).join(' → ')}
 
   for (const [name, { def }] of agents) {
     const phases = Object.entries(graph.nodes)
-      .filter(([, n]) => !n.terminal && n.agent === name)
+      .filter(([n]) => !graph.nodes[n].terminal && n === name)
       .map(([pn, n]) => n.label || pn)
       .join(', ') || 'on-demand';
-    L.push(`| **@${name}** | \`${def.alias}\` | ${phases} | ${resolveModel(config, def.model)} | \`${def.standalone || '—'}\` |`);
+    L.push(`| **@${name}** | \`${def.alias}\` | ${phases} | ${resolveModel(config, def.model, runtime)} | \`${def.standalone || '—'}\` |`);
   }
 
   L.push(`
@@ -353,7 +455,7 @@ ${flowChain(graph).join(' → ')}
   for (const [nodeName, node] of Object.entries(graph.nodes)) {
     if (node.terminal) continue;
     const incoming = (graph.edges || []).filter(e => e.to === nodeName && e.when).map(e => e.when).join(' OR ') || '—';
-    L.push(`| ${node.label || nodeName} | @${node.agent} | ${resolveModel(config, node.model)} | ${resolveEffort(config, node.effort)} | ${incoming} |`);
+    L.push(`| ${node.label || nodeName} | @${nodeName} | ${resolveModel(config, node.model, runtime)} | ${resolveEffort(config, node.effort, runtime)} | ${incoming} |`);
   }
 
   L.push(`
@@ -450,11 +552,11 @@ ${BLOCK_END}`;
   return 'appended';
 }
 
-// OpenCode agents read AGENTS.md (same managed-block mechanic as CLAUDE.md).
-function updateAgentsMd(targetDir, importPath) {
+// OpenCode/Codex agents read AGENTS.md (same managed-block mechanic as CLAUDE.md).
+function updateAgentsMd(targetDir, importPath, target = 'opencode') {
   const file = path.join(targetDir, 'AGENTS.md');
   const block = `${BLOCK_START}
-<!-- Managed by rensei-kata. Edit .rensei/ and run \`npx rensei-kata build --target opencode\`. -->
+<!-- Managed by rensei-kata. Edit .rensei/ and run \`npx rensei-kata build --target ${target}\`. -->
 @${importPath}
 ${BLOCK_END}`;
 
@@ -476,7 +578,7 @@ ${BLOCK_END}`;
 // main compile
 // ---------------------------------------------------------------------------
 
-function compile(core, targetDir, { global: isGlobal = false, target = 'claude' } = {}) {
+function compile(core, targetDir, { global: isGlobal = false, target = 'claude', runtime = null } = {}) {
   const written = [];
   const targets = target === 'all' ? ['claude', 'opencode'] : [target];
   const renseiDir = path.join(targetDir, '.rensei');
@@ -487,26 +589,30 @@ function compile(core, targetDir, { global: isGlobal = false, target = 'claude' 
   };
 
   for (const t of targets) {
-    // claude → .claude/{agents,commands,rules} · opencode → .opencode/{agent,command,rule}
-    const base = t === 'opencode' ? path.join(targetDir, '.opencode') : path.join(targetDir, '.claude');
-    const agentsDir = t === 'opencode' ? path.join(base, 'agent') : path.join(base, 'agents');
-    const commandsDir = t === 'opencode' ? path.join(base, 'command') : path.join(base, 'commands');
-    const rulesDir = t === 'opencode' ? path.join(base, 'rule') : path.join(base, 'rules');
+    // claude → .claude/{agents,commands,rules} · opencode → .opencode/{agents,commands,rule}
+    // (opencode uses PLURAL for agents/commands, singular for rule — per its docs)
+    const isOpen = t === 'opencode' || t === 'codex';
+    const base = isOpen ? path.join(targetDir, '.opencode') : path.join(targetDir, '.claude');
+    const agentsDir = isOpen ? path.join(base, 'agents') : path.join(base, 'agents');
+    const commandsDir = isOpen ? path.join(base, 'commands') : path.join(base, 'commands');
+    const rulesDir = isOpen ? path.join(base, 'rule') : path.join(base, 'rules');
+    const rt = runtime || RUNTIME_OF_TARGET[t] || core.config.RUNTIME || 'claude';
 
     // 1. agents
     for (const [name, agent] of core.agents) {
       const file = path.join(agentsDir, `${name}.md`);
-      write(file, compileAgent(name, agent, core, t));
+      write(file, compileAgent(name, agent, core, { target: t, runtime: rt }));
       written.push(file);
     }
 
-    // 2. commands
+    // 2. commands — with a description frontmatter (both runtimes show it in
+    //    their slash-command pickers)
     const kataFile = path.join(commandsDir, 'kata.md');
-    write(kataFile, compileKata(core));
+    write(kataFile, `---\ndescription: Dispatch a request to the right rensei agent (ES/EN) — no agent roster knowledge needed\n---\n${compileKata(core)}`);
     written.push(kataFile);
 
     const renseiCmdFile = path.join(commandsDir, 'rensei.md');
-    write(renseiCmdFile, compileRenseiCommand(core));
+    write(renseiCmdFile, `---\ndescription: Run the rensei loop on a task — graph-compiled execution protocol (phases, gates, bounds)\n---\n${compileRenseiCommand(core)}`);
     written.push(renseiCmdFile);
 
     // 3. rules
@@ -516,17 +622,17 @@ function compile(core, targetDir, { global: isGlobal = false, target = 'claude' 
       written.push(file);
     }
 
-    // 4. entry-point managed block: CLAUDE.md (claude) / AGENTS.md (opencode)
+    // 4. entry-point managed block: CLAUDE.md (claude) / AGENTS.md (opencode/codex)
     const importPath = isGlobal
       ? toPosix(path.join(targetDir, '.rensei', 'RENSEI.md'))
       : '.rensei/RENSEI.md';
-    if (t === 'opencode') updateAgentsMd(targetDir, importPath);
+    if (isOpen) updateAgentsMd(targetDir, importPath, t);
     else updateClaudeMd(targetDir, importPath);
   }
 
   // 5. compiled methodology doc + diagram live next to the graph (target-shared)
   const docFile = path.join(renseiDir, 'RENSEI.md');
-  write(docFile, compileRenseiDoc(core));
+  write(docFile, compileRenseiDoc(core, runtime));
   written.push(docFile);
 
   const diagramFile = path.join(renseiDir, 'graph.html');
@@ -554,7 +660,7 @@ function compile(core, targetDir, { global: isGlobal = false, target = 'claude' 
 
   const mdActions = [];
   if (targets.includes('claude')) mdActions.push('CLAUDE.md updated (managed block)');
-  if (targets.includes('opencode')) mdActions.push('AGENTS.md updated (managed block)');
+  if (targets.some(t => t === 'opencode' || t === 'codex')) mdActions.push('AGENTS.md updated (managed block)');
   return { written, claudeMdAction: mdActions.join(' · ') };
 }
 

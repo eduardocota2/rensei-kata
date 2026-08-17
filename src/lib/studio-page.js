@@ -8,7 +8,6 @@ const graphCss = require('./graph-css');
 const STRINGS = {
   // topbar
   statusLoading: 'loading…',
-  addNode: '+ node',
   addEdge: '+ transition',
   resetLayout: 'reset layout',
   resetLayoutTitle: 'Discard manual positions and return to the automatic layout',
@@ -18,7 +17,7 @@ const STRINGS = {
   inspectorToggleTitle: 'Show / hide the inspector panel',
   inspectorCloseTitle: 'Close inspector',
   // canvas
-  hint: 'Drag to move · drag from a port to connect · drag an edge’s handles to rewire · double-click to edit · scroll to zoom · Ctrl+S saves · Ctrl+Z undoes',
+  hint: 'Drag to pan · Shift+drag selects · double-click adds an agent · drag from a port to connect · Ctrl+K for everything',
   fitView: 'fit',
   connectFrom: 'Click a target node for the new transition from {from} — Esc cancels',
   selectSource: 'Select a source node first, then press + transition',
@@ -49,16 +48,17 @@ const STRINGS = {
   appliedNotSaved: 'YAML applied to the canvas (not saved).',
   networkError: 'Cannot reach the studio server — changes not saved. Is the terminal still running?',
   // inspector
-  inspectorTitle: 'Inspector',
-  nodeTitle: 'Node',
+  inspectorTitle: 'Agent',
+  nodeTitle: 'Agent',
   transitionTitle: 'Transition',
   inspectorEmpty:
-    'Click a node or an arrow to edit it.<br><br>' +
-    'Drag a node to move it — its position is saved to the YAML (<code>positions:</code>).<br>' +
+    'Every node IS an agent — add one with <code>+ agent</code> and it is created, wired into rensei and kata on save.<br><br>' +
+    'Click a node or an arrow to edit it. Drag a node to move it — its position is saved to the YAML (<code>positions:</code>).<br><br>' +
     'Drag the background to pan · scroll to zoom.',
   // fields
   fieldId: 'id',
-  fieldLabel: 'label',
+  fieldLabel: 'name',
+  fieldLabelHint: 'the agent\'s identity — two agents cannot share a name',
   fieldAgent: 'agent',
   fieldModel: 'model',
   fieldEffort: 'effort',
@@ -81,34 +81,46 @@ const STRINGS = {
   // actions
   deleteNode: 'Delete node',
   deleteEdge: 'Delete transition',
-  confirmDelete: 'Confirm delete',
-  confirmDeleteHint: 'Press Delete again to confirm',
   renameEmpty: 'Name cannot be empty — rename not applied.',
-  renameTaken: 'A node with that name already exists — rename not applied.',
-  renameChars: 'Use lowercase letters, digits and dashes only (a-z, 0-9, -) — rename not applied.',
+  renameTaken: 'Another agent already uses that name — differentiate it (e.g. SELF-CRITIQUE DESIGN).',
+  renameChars: 'Use letters, digits and dashes only — rename not applied.',
+  nameSuggestion: 'Try: {s}',
+  deletedUndo: 'Deleted — Ctrl+Z to undo',
   maxInvalid: 'Expected a number (3) or a variable ($ITERATIONS.x) — save will flag this',
+  // runtime
+  runtimeTitle: 'Runtime this workflow compiles for — models and efforts adapt to it',
+  runtimeDirty: 'runtime changed — Save persists it to rensei.config.yaml',
+  // node=agent
+  agentNew: 'New agent — created and wired into rensei + kata when you Save.',
+  agentSeeded: 'Agent created from @{base} — an independent copy: editing either never touches the other.',
+  scaffoldedOne: 'New agent scaffolded: @{a}. Recompiled {n} file.',
+  scaffoldedMany: 'New agents scaffolded: {a}. Recompiled {n} files.',
+  skillsPending: 'this agent is created on Save — configure its skills after the first save',
+  // prompt editor
+  promptField: 'prompt (the agent\'s brain)',
+  promptHint: 'Markdown, edited live in .rensei/agents/{a}/prompt.md — the next Save recompiles it into the runtime agents',
+  promptPending: 'this agent is created on Save — write its prompt then',
+  promptLoadFail: 'could not load the prompt — is the studio server running?',
+  promptSaved: 'Prompt saved — Save the graph to recompile the agents.',
+  promptDirty: 'prompt edited — click Save prompt to write it',
   // data defaults
   newNodeBase: 'node',
+  duplicateTitle: 'Duplicate = a NEW agent based on this one — an unlinked copy (config + prompt), wired on save',
+  // topbar
+  addNode: '+ agent',
+  addEdge: '+ transition',
   // theme
   themeAuto: 'auto',
   themeLight: 'light',
   themeDark: 'dark',
   // tools
-  kataBtn: 'kata',
-  kataBtnTitle: 'Routing simulator — see where kata sends a request, without spending tokens',
   exportSvgTitle: 'Download the graph as a standalone SVG',
   exportPngTitle: 'Download the graph as a PNG image',
   paletteTitle: 'Command palette — type to filter, Enter to run',
-  // routing simulator
-  routeTitle: 'kata · routing simulator',
-  routeSub: 'Deterministic trigger matching over the compiled agents — the pre-view of what /kata decides in session.',
-  routePlaceholder: 'e.g. corrige este bug en el login…',
-  routeRun: 'Route',
-  routeRunning: 'routing…',
-  routeEmpty: 'no trigger matched — kata would fall back to @gate (evaluate first)',
-  routeWinner: '→ routes to',
-  routeAlso: 'also considered',
-  routeNeedText: 'type a request first',
+  // selection (Figma-style)
+  nSelected: '{n} agents selected',
+  nSelectedHint: 'Drag to move them together · Delete removes them · Esc clears',
+  selectAllHint: 'Ctrl+A selects every agent',
   // diff preview
   diffTitle: 'Review YAML changes',
   diffSub: 'Line diff of your edits against the graph on disk — apply only what you meant.',
@@ -185,7 +197,7 @@ body {
   margin: 0; background: var(--bg); color: var(--ink);
   font-family: "Inter", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   display: flex; flex-direction: column; height: 100vh; overflow: hidden;
-  font-size: 13px; -webkit-font-smoothing: antialiased;
+  font-size: 13.5px; -webkit-font-smoothing: antialiased;
 }
 ::selection { background: var(--accent-soft); }
 * { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
@@ -194,9 +206,9 @@ body {
 *::-webkit-scrollbar-track { background: transparent; }
 
 button {
-  font: inherit; font-size: 12.5px; color: var(--ink); background: transparent;
-  border: 1px solid var(--border); border-radius: 6px;
-  padding: .3rem .65rem; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--ink); background: transparent;
+  border: 1px solid var(--border); border-radius: 7px;
+  padding: .38rem .7rem; cursor: pointer;
   transition: background .12s ease-out, border-color .12s ease-out, color .12s ease-out;
 }
 button:hover { background: var(--elevated); border-color: var(--border-strong); }
@@ -207,47 +219,116 @@ button.primary { background: var(--accent-fill); color: var(--on-accent); border
 button.primary:hover { background: var(--accent-fill-strong); border-color: var(--accent-fill-strong); }
 button.danger { color: var(--danger); }
 button.danger:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
-button.danger.armed { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 600; }
 button:disabled { opacity: .45; cursor: default; pointer-events: none; }
 
-/* topbar */
+/* topbar — minimal: brand, runtime, view/theme toggles, YAML, Save.
+   60px tall, 14px controls: present, not loud (impeccable: tool density) */
 .topbar {
-  display: flex; align-items: center; gap: .45rem; height: 42px; flex: none;
-  padding: 0 .8rem; background: var(--panel); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: .55rem; height: 60px; flex: none;
+  padding: 0 1rem; background: var(--panel); border-bottom: 1px solid var(--border);
 }
-.brand { display: flex; align-items: baseline; gap: .4rem; margin-right: .35rem; }
-.brand h1 { font-size: 13.5px; margin: 0; letter-spacing: .01em; font-weight: 650; }
+.brand { display: flex; align-items: baseline; gap: .45rem; margin-right: .35rem; }
+.brand h1 { font-size: 16px; margin: 0; letter-spacing: .01em; font-weight: 650; }
 .brand h1 .kanji { color: var(--accent); }
-.brand .path { color: var(--faint); font-size: 11px; max-width: 30ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.topbar .sep { width: 1px; height: 18px; background: var(--border); margin: 0 .3rem; }
 .topbar .spacer { flex: 1; }
 .topbar > *:not(.spacer) { flex: none; }
-.zoom-readout { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; min-width: 4.2ch; text-align: right; }
-#theme-toggle { display: inline-flex; align-items: center; justify-content: center; min-width: 2.1rem; }
-#theme-toggle svg { display: block; }
-@media (max-width: 1100px) { .brand .path { display: none; } }
-@media (max-width: 720px) {
-  .topbar { overflow-x: auto; scrollbar-width: none; }
-  .topbar::-webkit-scrollbar { display: none; }
-  /* the primary action never scrolls away: save packs with the brand at the
-     left, utilities scroll off to the right */
-  #save-btn { order: 0; }
-  .topbar .spacer { order: 2; }
-  .topbar > button:not(#save-btn), .topbar .sep, .zoom-readout { order: 3; }
+.tbtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
+  font: inherit; font-size: 14px; color: var(--ink); background: transparent;
+  border: 1px solid transparent; border-radius: 8px;
+  height: 38px; padding: 0 .8rem; cursor: pointer;
+  transition: background .12s ease-out, border-color .12s ease-out, color .12s ease-out, transform .1s ease-out;
 }
-.status {
-  display: inline-flex; align-items: center; gap: .4rem;
-  font-size: 11px; padding: .2rem .6rem; border-radius: 99px; font-weight: 600; letter-spacing: .01em;
-  color: var(--muted); background: var(--elevated);
-}
-.status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.status.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
-.status.err { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
-.status.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.tbtn:hover { background: var(--elevated); border-color: var(--border); }
+.tbtn:active { transform: scale(.97); }
+.tbtn:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.tbtn svg { display: block; }
+.tbtn.icon { width: 38px; padding: 0; }
+.tbtn.mini { font-size: 12px; font-weight: 650; letter-spacing: .05em; padding: 0 .7rem; color: var(--muted); }
+.tbtn.mini:hover { color: var(--ink); }
+.tbtn.primary { background: var(--accent-fill); color: var(--on-accent); border-color: var(--accent-fill); font-weight: 600; }
+.tbtn.primary:hover { background: var(--accent-fill-strong); border-color: var(--accent-fill-strong); }
+.tbtn:disabled { opacity: .45; cursor: default; pointer-events: none; }
 
-/* layout */
-.main { display: flex; flex: 1; min-height: 0; position: relative; }
-.canvas { flex: 1; overflow: hidden; position: relative; cursor: grab; }
+/* runtime selector — primary configuration, sits in the topbar with its own
+   chip icon; models/efforts across the whole studio follow it */
+.runtime-wrap {
+  display: inline-flex; align-items: center; gap: .45rem; height: 38px;
+  padding: 0 .35rem 0 .75rem; background: var(--elevated);
+  border: 1px solid var(--border); border-radius: 8px;
+  transition: border-color .12s ease-out, box-shadow .12s ease-out;
+}
+.runtime-wrap:hover { border-color: var(--border-strong); }
+.runtime-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.runtime-wrap svg { display: block; color: var(--accent); flex: none; }
+.runtime-wrap .runtime-select {
+  font: inherit; font-size: 14px; font-weight: 600; color: var(--ink);
+  background: transparent; border: 0; height: 36px; padding: 0 .55rem 0 0;
+  cursor: pointer; text-transform: capitalize;
+}
+.runtime-wrap .runtime-select:focus-visible { outline: none; box-shadow: none; }
+
+.status {
+  position: absolute; bottom: .9rem; right: .9rem; z-index: 7;
+  display: inline-flex; align-items: center; gap: .45rem;
+  font-size: 11.5px; padding: .3rem .75rem; border-radius: 99px; font-weight: 600; letter-spacing: .01em;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgb(0 0 0 / .10);
+  backdrop-filter: blur(6px);
+  transition: color .18s ease-out, background .18s ease-out, border-color .18s ease-out, box-shadow .18s ease-out;
+}
+.status::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor; transition: background .18s ease-out; }
+.status.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, transparent); background: color-mix(in srgb, var(--panel) 88%, color-mix(in srgb, var(--ok) 10%, transparent)); }
+.status.err { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); background: color-mix(in srgb, var(--panel) 88%, color-mix(in srgb, var(--danger) 10%, transparent)); }
+.status.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent); background: color-mix(in srgb, var(--panel) 88%, color-mix(in srgb, var(--warn) 10%, transparent)); }
+
+/* floating tool dock — Figma/FigJam grammar: a top-center pill holding the
+   canvas tools, right under the topbar; nothing else competes with the graph */
+.dock {
+  position: absolute; top: .65rem; left: 50%; transform: translateX(-50%); z-index: 7;
+  display: flex; align-items: center; gap: .22rem;
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  border: 1px solid var(--border-strong); border-radius: 11px;
+  padding: .32rem .42rem; box-shadow: 0 8px 28px rgb(0 0 0 / .14);
+  backdrop-filter: blur(6px);
+}
+.dock .dbtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: .38rem;
+  font: inherit; font-size: 12.5px; color: var(--ink); background: transparent;
+  border: 1px solid transparent; border-radius: 8px;
+  height: 32px; padding: 0 .6rem; cursor: pointer; white-space: nowrap;
+  transition: background .12s ease-out, border-color .12s ease-out, color .12s ease-out;
+}
+.dock .dbtn:hover { background: var(--elevated); border-color: var(--border); }
+.dock .dbtn:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.dock .dbtn svg { display: block; }
+.dock .dbtn.icon { width: 32px; padding: 0; }
+.dock .dbtn.accent { color: var(--accent); }
+.dock .dbtn.accent:hover { background: var(--accent-soft); border-color: var(--accent); }
+.dock .dsep { width: 1px; height: 20px; background: var(--border); margin: 0 .2rem; flex: none; }
+.dock .zoom-readout { font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; min-width: 4ch; text-align: center; padding: 0 .1rem; }
+@media (max-width: 900px) {
+  .dock { max-width: calc(100% - 1.6rem); overflow-x: auto; scrollbar-width: none; }
+  .dock::-webkit-scrollbar { display: none; }
+  .dock .dbtn .lbl { display: none; }
+  .dock .dbtn.labeled { width: 32px; padding: 0; }
+}
+
+/* marquee — Shift+drag rubber-band selection on empty canvas (plain drag pans) */
+.marquee {
+  position: absolute; z-index: 3; display: none;
+  border: 1px solid var(--accent); background: var(--accent-soft);
+  border-radius: 2px; pointer-events: none;
+}
+.marquee.on { display: block; }
+.canvas.marqueeing { cursor: crosshair !important; }
+
+/* layout — two real components: the side panel (left) and the graph
+   container (right). No overlay: the canvas owns exactly its box. */
+.main { display: flex; flex: 1; min-height: 0; }
+.canvas { flex: 1; min-width: 0; overflow: hidden; position: relative; cursor: grab; }
 .canvas.panning { cursor: grabbing; }
 .canvas.connecting { cursor: crosshair; }
 .canvas-inner { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
@@ -271,41 +352,78 @@ button:disabled { opacity: .45; cursor: default; pointer-events: none; }
   padding: .35rem .85rem; font-size: 12px; color: var(--muted); box-shadow: 0 4px 16px rgb(0 0 0 / .10);
 }
 
-/* inspector */
+/* inspector — its own flex column on the left; it collapses to a width
+   animation and leaves the flap visible to bring it back */
 .inspector {
-  width: 330px; background: var(--panel); border-left: 1px solid var(--border);
-  overflow-y: auto; display: none;
+  width: 330px; flex: none; background: var(--panel); border-right: 1px solid var(--border);
+  overflow-y: auto; overflow-x: hidden;
+  transition: width .22s cubic-bezier(.3, .8, .3, 1), opacity .18s ease-out .04s;
 }
-.inspector.open { display: block; }
+.inspector.hidden { width: 0; opacity: 0; }
+
+/* the flap — the panel's own toggle, riding its right edge; when the panel is
+   hidden the flap stays pinned at the canvas's left edge */
+.insp-flap {
+  position: absolute; left: 330px; top: 50%; transform: translateY(-50%); z-index: 8;
+  width: 20px; height: 52px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--muted); background: var(--panel);
+  border: 1px solid var(--border); border-left: 0; border-radius: 0 8px 8px 0;
+  cursor: pointer;
+  transition: left .22s cubic-bezier(.3, .8, .3, 1), color .12s ease-out, background .12s ease-out;
+}
+.insp-flap:hover { color: var(--accent); background: var(--elevated); }
+.insp-flap:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.insp-flap.closed { left: 0; }
+.insp-flap.closed svg { transform: rotate(180deg); }
+.insp-flap svg { transition: transform .22s cubic-bezier(.3, .8, .3, 1); }
+@media (max-width: 900px) {
+  .inspector { position: absolute; left: 0; top: 0; bottom: 0; z-index: 5; box-shadow: 6px 0 20px rgb(0 0 0 / .18); }
+  .insp-flap { left: 0 !important; z-index: 9; }
+  .insp-flap.closed { left: 0 !important; }
+  .inspector.hidden { width: 330px; transform: translateX(-100%); }
+  .inspector { transition: transform .22s cubic-bezier(.3, .8, .3, 1); }
+}
 .inspector-head {
   display: flex; align-items: center; justify-content: space-between; gap: .5rem;
-  padding: .7rem .9rem; border-bottom: 1px solid var(--border);
-  font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 650;
+  padding: .75rem .95rem; border-bottom: 1px solid var(--border);
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 650;
 }
 .insp-close { padding: .1rem .35rem; border: 0; color: var(--muted); line-height: 1; }
 .insp-close:hover { color: var(--ink); }
 .insp-close svg { display: block; }
-.inspector-body { padding: .8rem .9rem; }
-.inspector-empty { color: var(--muted); font-size: 12px; padding: 1rem .9rem; line-height: 1.65; }
-.field { margin-bottom: .7rem; }
-.field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: .3rem; font-weight: 600; letter-spacing: .02em; }
+.inspector-body { padding: .9rem .95rem; }
+.inspector-empty { color: var(--muted); font-size: 12.5px; padding: 1rem .95rem; line-height: 1.65; }
+.field { margin-bottom: .8rem; }
+.field label { display: block; font-size: 11.5px; color: var(--muted); margin-bottom: .32rem; font-weight: 600; letter-spacing: .02em; }
 .field input[type="text"], .field select, .field textarea {
-  width: 100%; font: inherit; font-size: 12.5px; color: var(--ink);
-  background: var(--inset); border: 1px solid var(--border); border-radius: 6px; padding: .34rem .5rem;
+  width: 100%; font: inherit; font-size: 13px; color: var(--ink);
+  background: var(--inset); border: 1px solid var(--border); border-radius: 7px; padding: .4rem .55rem;
 }
 .field textarea { resize: vertical; min-height: 2.3em; line-height: 1.45; }
 .field.inline { display: flex; align-items: center; gap: .5rem; }
-.field.inline label { margin: 0; font-weight: 500; font-size: 12.5px; color: var(--ink); }
+.field.inline label { margin: 0; font-weight: 500; font-size: 13px; color: var(--ink); }
 .field.inline input[type="checkbox"] { accent-color: var(--accent); }
-.skills-field { border: 1px solid var(--border); border-radius: 6px; padding: .5rem .6rem .3rem; }
-.skills-hint { font-size: 10.5px; color: var(--muted); margin-bottom: .4rem; }
-.skill-row { display: flex; align-items: baseline; gap: .45rem; padding: .16rem 0; font-size: 12px; cursor: pointer; }
+.skills-field { border: 1px solid var(--border); border-radius: 7px; padding: .55rem .65rem .35rem; }
+.skills-hint { font-size: 11px; color: var(--muted); margin-bottom: .45rem; line-height: 1.5; }
+.skill-row { display: flex; align-items: baseline; gap: .45rem; padding: .18rem 0; font-size: 12.5px; cursor: pointer; }
 .skill-row input { flex: none; position: relative; top: 1px; accent-color: var(--accent); }
 .skill-row input:disabled { cursor: default; }
 .skill-row em { color: var(--muted); font-style: normal; font-size: 11px; }
-.skills-actions { margin: .35rem 0 .25rem; }
-.skills-actions button { font-size: 11px; padding: .18rem .5rem; }
-.inspector .actions { display: flex; gap: .5rem; margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--border); }
+.skills-actions { margin: .4rem 0 .25rem; }
+.skills-actions button { font-size: 11.5px; padding: .2rem .55rem; }
+
+/* prompt editor — the agent's brain, monospace at reading height */
+.prompt-field .prompt-row { display: flex; }
+.prompt-field .prompt-area {
+  width: 100%; font-family: "Cascadia Code", "JetBrains Mono", ui-monospace, Consolas, monospace;
+  font-size: 12px; line-height: 1.55; color: var(--ink);
+  background: var(--inset); border: 1px solid var(--border); border-radius: 7px;
+  padding: .5rem .6rem; resize: vertical; min-height: 16em;
+}
+.prompt-field .prompt-area:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.prompt-field .prompt-save { margin-top: .45rem; font-size: 12px; }
+.inspector .actions { display: flex; gap: .5rem; margin-top: 1rem; padding-top: .85rem; border-top: 1px solid var(--border); }
 
 /* yaml drawer */
 .yaml-drawer {
@@ -336,22 +454,31 @@ button:disabled { opacity: .45; cursor: default; pointer-events: none; }
 .canvas.connecting .rk-graph [data-node] .port { opacity: 1; pointer-events: all; }
 .yaml-drawer textarea:focus { outline: none; box-shadow: inset 0 0 0 2px var(--accent-soft); }
 
-/* messages — bottom-right: the top of the canvas is where the graph lives */
+/* messages — bottom-right; animated in, self-dismiss */
 .messages {
-  position: absolute; bottom: .65rem; right: .8rem;
-  display: flex; flex-direction: column; gap: .35rem; z-index: 10; max-width: min(64ch, 92%);
+  position: absolute; bottom: .75rem; right: .8rem;
+  display: flex; flex-direction: column; gap: .4rem; z-index: 10; max-width: min(64ch, 92%);
   align-items: flex-end;
 }
 .msg {
-  font-size: 12px; padding: .45rem .75rem; border-radius: 8px; line-height: 1.45;
+  font-size: 12.5px; padding: .5rem .85rem; border-radius: 9px; line-height: 1.45;
   background: var(--elevated); border: 1px solid var(--border); box-shadow: 0 4px 16px rgb(0 0 0 / .10);
+  animation: msg-in .18s cubic-bezier(.2, .8, .3, 1);
+  transition: opacity .25s ease-out, transform .25s ease-out;
 }
+.msg.dying { opacity: 0; transform: translateY(4px); }
 .msg.err { border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); }
 .msg.warn { border-color: color-mix(in srgb, var(--warn) 45%, transparent); color: var(--warn); }
 .msg.ok { border-color: color-mix(in srgb, var(--ok) 45%, transparent); color: var(--ok); }
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(8px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
 
 @media (max-width: 900px) {
-  .inspector { position: absolute; right: 0; top: 0; bottom: 0; z-index: 5; box-shadow: -6px 0 20px rgb(0 0 0 / .18); }
+  /* narrow screens: the panel overlays again — the canvas keeps its size */
+  .inspector { position: absolute; left: 0; top: 0; bottom: 0; z-index: 5; box-shadow: 6px 0 20px rgb(0 0 0 / .18); }
+  .main { position: relative; }
 }
 
 /* validation anchoring — the node that carries the error wears the danger */
@@ -361,9 +488,15 @@ button:disabled { opacity: .45; cursor: default; pointer-events: none; }
 .msg.anchor { cursor: pointer; }
 .msg.anchor::after { content: ' ⤴'; opacity: .7; }
 
-/* minimap — bottom-left overview; the hint retires on first interaction anyway */
+/* alignment guides — Figma-style snap feedback during node drags */
+.rk-graph .align-guide {
+  stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 3;
+  opacity: .65; pointer-events: none;
+}
+
+/* minimap — top-right below the topbar (the inspector owns the left edge) */
 .minimap {
-  position: absolute; bottom: .65rem; left: .8rem; z-index: 4;
+  position: absolute; top: .65rem; right: .8rem; z-index: 4;
   background: color-mix(in srgb, var(--panel) 92%, transparent);
   border: 1px solid var(--border); border-radius: 6px;
   padding: 4px; cursor: pointer; overflow: hidden;
@@ -380,12 +513,21 @@ button:disabled { opacity: .45; cursor: default; pointer-events: none; }
   position: fixed; inset: 0; z-index: 40; display: none;
   align-items: flex-start; justify-content: center; padding-top: 12vh;
   background: color-mix(in srgb, var(--bg) 55%, transparent);
+  opacity: 0;
 }
-.modal-root.on { display: flex; }
+.modal-root.on { display: flex; animation: modal-fade .16s ease-out forwards; }
+.modal-root.closing { animation: modal-fade .12s ease-out reverse forwards; }
+@keyframes modal-fade { from { opacity: 0; } to { opacity: 1; } }
 .modal {
   width: min(58ch, 92vw); background: var(--panel); border: 1px solid var(--border-strong);
-  border-radius: 8px; box-shadow: 0 18px 60px rgb(0 0 0 / .25);
+  border-radius: 12px; box-shadow: 0 18px 60px rgb(0 0 0 / .25);
   display: flex; flex-direction: column; max-height: 74vh; overflow: hidden;
+}
+.modal-root.on .modal { animation: modal-pop .2s cubic-bezier(.2, .8, .3, 1); }
+.modal-root.closing .modal { animation: modal-pop .14s ease-out reverse forwards; }
+@keyframes modal-pop {
+  from { opacity: 0; transform: translateY(10px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .modal-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: .6rem;
@@ -395,22 +537,6 @@ button:disabled { opacity: .45; cursor: default; pointer-events: none; }
 .modal-head .sub { font-size: 11px; color: var(--muted); }
 .modal-body { padding: .8rem .95rem; overflow-y: auto; }
 .modal-actions { display: flex; gap: .5rem; justify-content: flex-end; padding: .6rem .95rem .8rem; }
-
-/* route simulator */
-.route-input { display: flex; gap: .5rem; }
-.route-input textarea {
-  flex: 1; font: inherit; font-size: 12.5px; color: var(--ink);
-  background: var(--inset); border: 1px solid var(--border); border-radius: 6px;
-  padding: .45rem .55rem; resize: vertical; min-height: 2.4em; line-height: 1.45;
-}
-.route-winner {
-  display: flex; align-items: baseline; gap: .5rem; margin: .8rem 0 .2rem;
-  font-size: 13px; color: var(--muted);
-}
-.route-winner strong { font-size: 14.5px; color: var(--ok); font-weight: 650; }
-.route-hit { font-size: 12px; color: var(--muted); padding: .12rem 0 .12rem 1rem; }
-.route-alt { font-size: 12px; color: var(--faint); padding: .3rem 0 .12rem 1rem; border-top: 1px dashed var(--border); margin-top: .5rem; }
-.route-alt:first-child { border-top: 0; margin-top: 0; }
 
 /* palette */
 .palette-input {
@@ -454,10 +580,13 @@ const PAGE_JS = `
     selected: null, // { kind: 'node'|'edge', key }
     dirty: false, // graph differs from disk → save button + beforeunload
     yamlMode: false, yamlEdited: false, // yamlMode: drawer is being edited; canvas locked, one Save routes to the text
-    inspectorPinned: false, // manually opened with no selection — stays until closed explicitly
+    inspectorPinned: true, // the panel is always available on the left — the toggle hides it
     history: [], future: [], lastHistKey: null, lastHistTime: 0,
     connect: null, // { from } while picking a transition target
     problems: null, // { nodes: {name:[msg]}, edges: {idx:[msg]} } — from the last validation
+    guides: [], // active alignment guide lines during a node drag
+    selection: [], // marquee multi-selection (node names); state.selected stays the inspector target
+    runtime: 'claude', runtimes: ['claude'], runtimeDirty: false,
   };
 
   var canvas = document.getElementById('canvas');
@@ -471,6 +600,40 @@ const PAGE_JS = `
   var zoomEl = document.getElementById('zoom-readout');
   var veil = document.getElementById('canvas-veil');
   var hintEl = document.getElementById('hint');
+  var marqueeEl = document.getElementById('marquee');
+
+  // ---------- marquee selection (Figma-style rubber band) ----------
+  function updateMarquee(e) {
+    var rect = canvas.getBoundingClientRect();
+    var x1 = Math.min(dragState.startClient.x, e.clientX) - rect.left;
+    var y1 = Math.min(dragState.startClient.y, e.clientY) - rect.top;
+    var x2 = Math.max(dragState.startClient.x, e.clientX) - rect.left;
+    var y2 = Math.max(dragState.startClient.y, e.clientY) - rect.top;
+    marqueeEl.style.left = x1 + 'px';
+    marqueeEl.style.top = y1 + 'px';
+    marqueeEl.style.width = (x2 - x1) + 'px';
+    marqueeEl.style.height = (y2 - y1) + 'px';
+    // graph-space rect → intersecting nodes become the tentative selection
+    var a = toSvg(x1 + rect.left, y1 + rect.top);
+    var b = toSvg(x2 + rect.left, y2 + rect.top);
+    var L = RG.layout(state.graph);
+    var hit = [];
+    Object.keys(L.pos).forEach(function (n) {
+      var p = L.pos[n], s = RG.sizeOf(state.graph, n);
+      if (p.x < b.x && p.x + s.w > a.x && p.y < b.y && p.y + s.h > a.y) hit.push(n);
+    });
+    state.selection = hit;
+    applySelection();
+  }
+  function endMarquee() {
+    marqueeEl.classList.remove('on');
+    canvas.classList.remove('marqueeing');
+    marqueeEl.style.width = '0';
+    marqueeEl.style.height = '0';
+    if (!state.selection.length) { inspect(); return; }
+    if (state.selection.length === 1) select({ kind: 'node', key: state.selection[0] });
+    else { state.selected = null; applySelection(); inspect(); }
+  }
 
   // ---------- helpers ----------
   function api(path, body) {
@@ -496,7 +659,11 @@ const PAGE_JS = `
       });
     }
     messages.appendChild(el);
-    setTimeout(function () { el.remove(); }, kind === 'err' ? 9000 : 4000);
+    // ease-out before removal — the stack never blinks out
+    setTimeout(function () {
+      el.classList.add('dying');
+      setTimeout(function () { el.remove(); }, 260);
+    }, kind === 'err' ? 9000 : 4000);
   }
 
   // Validation surfaces twice: as toasts (clickable → jumps to the culprit)
@@ -549,7 +716,22 @@ const PAGE_JS = `
     var a = state.agents.find(function (x) { return x.name === name; });
     return (a && a.skills) || [];
   }
+  function agentExists(name) { return state.agents.some(function (x) { return x.name === name; }); }
   function nstr(one, many, n) { return (n === 1 ? S[one] : S[many]).replace('{n}', n); }
+
+  // MODELS/EFFORT may be flat or per-runtime — resolve the ACTIVE runtime's
+  // table client-side so switching runtime re-filters the selects instantly.
+  function rtTable(key) {
+    var raw = state.config[key];
+    if (!raw || typeof raw !== 'object') return raw;
+    var values = Object.keys(raw).map(function (k) { return raw[k]; });
+    var nested = values.length > 0 && values.every(function (v) { return v && typeof v === 'object'; });
+    if (!nested) return raw;
+    return raw[state.runtime] || raw.claude || values[0] || {};
+  }
+  function slugify(label) {
+    return String(label || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64);
+  }
 
   // ---------- render ----------
   var renderQueued = false;
@@ -562,14 +744,81 @@ const PAGE_JS = `
       var out = RG.renderSvg(state.graph, state.config, { interactive: true });
       inner.innerHTML = out.markup;
       lastEnds = out.ends || {};
+      state.origin = { x: out.minX || 0, y: out.minY || 0 };
+      // NO origin compensation: the adaptive viewBox already keeps dragged
+      // content stationary on screen (the node extending the bounds moves
+      // minX by exactly its own delta). Compensating here double-panned
+      // north/west drags — that was the "too fast" camera.
       applySelection();
       applyProblemMarks();
+      drawGuides();
       updateMinimap();
       if (dragState && dragState.kind === 'node' && dragState.active) {
         var el = inner.querySelector('[data-node="' + dragState.key + '"]');
         if (el) el.classList.add('dragging');
       }
     });
+  }
+
+  // ---------- alignment guides ----------
+  // Figma-style: when a dragged node's edge or center lines up with another
+  // node (±6px), snap to it and draw the guide. Shift disables everything.
+  function buildAlignTargets(skip) {
+    var L = RG.layout(state.graph);
+    var X = [], Y = [];
+    Object.keys(L.pos).forEach(function (n) {
+      if (n === skip) return;
+      var p = L.pos[n], s = RG.sizeOf(state.graph, n);
+      X.push({ v: p.x, off: 0, y0: p.y, y1: p.y + s.h }, { v: p.x + s.w / 2, off: s.w / 2, y0: p.y, y1: p.y + s.h }, { v: p.x + s.w, off: s.w, y0: p.y, y1: p.y + s.h });
+      Y.push({ v: p.y, off: 0, x0: p.x, x1: p.x + s.w }, { v: p.y + s.h / 2, off: s.h / 2, x0: p.x, x1: p.x + s.w }, { v: p.y + s.h, off: s.h, x0: p.x, x1: p.x + s.w });
+    });
+    return { X: X, Y: Y };
+  }
+
+  function alignTo(key, nx, ny) {
+    if (!dragState.alignTargets) dragState.alignTargets = buildAlignTargets(dragState.key);
+    var T = 6;
+    var s = RG.sizeOf(state.graph, key);
+    var lines = [];
+    // X: try left / center / right of the dragged node against every target
+    var bestX = null;
+    [[nx, 0], [nx + s.w / 2, s.w / 2], [nx + s.w, s.w]].forEach(function (pair) {
+      dragState.alignTargets.X.forEach(function (t) {
+        var d = Math.abs(pair[0] - t.v);
+        if (d <= T) {
+          lines.push({ x1: t.v, y1: Math.min(ny, t.y0) - 12, x2: t.v, y2: Math.max(ny + s.h, t.y1) + 12 });
+          if (!bestX || d < bestX.d) bestX = { d: d, nx: t.v - pair[1] };
+        }
+      });
+    });
+    if (bestX) nx = Math.round(bestX.nx);
+    var bestY = null;
+    [[ny, 0], [ny + s.h / 2, s.h / 2], [ny + s.h, s.h]].forEach(function (pair) {
+      dragState.alignTargets.Y.forEach(function (t) {
+        var d = Math.abs(pair[0] - t.v);
+        if (d <= T) {
+          lines.push({ x1: Math.min(nx, t.x0) - 12, y1: t.v, x2: Math.max(nx + s.w, t.x1) + 12, y2: t.v });
+          if (!bestY || d < bestY.d) bestY = { d: d, ny: t.v - pair[1] };
+        }
+      });
+    });
+    if (bestY) ny = Math.round(bestY.ny);
+    return { nx: nx, ny: ny, lines: lines };
+  }
+
+  function drawGuides() {
+    var svg = inner.querySelector('svg.rk-graph');
+    if (!svg) return;
+    svg.querySelectorAll('.align-guide').forEach(function (el) { el.remove(); });
+    if (!state.guides || !state.guides.length) return;
+    state.guides.forEach(function (g) {
+      svg.insertAdjacentHTML('beforeend',
+        '<line class="align-guide" x1="' + g.x1 + '" y1="' + g.y1 + '" x2="' + g.x2 + '" y2="' + g.y2 + '"/>');
+    });
+  }
+  function clearGuides() {
+    state.guides = [];
+    inner.querySelectorAll('.align-guide').forEach(function (el) { el.remove(); });
   }
 
   // rewire handles on the selected edge: tail (from) and head (to) ports
@@ -586,12 +835,24 @@ const PAGE_JS = `
   function applySelection() {
     inner.querySelectorAll('.selected').forEach(function (el) { el.classList.remove('selected'); });
     inner.querySelectorAll('.edge-handle').forEach(function (el) { el.remove(); }); // stale handles die with any selection change
+    // marquee multi-selection paints every member
+    (state.selection || []).forEach(function (name) {
+      if (state.selected && state.selected.kind === 'node' && state.selected.key === name) return;
+      var el = inner.querySelector('[data-node="' + name + '"]');
+      if (el) el.classList.add('selected');
+    });
     if (!state.selected) return;
     var sel = state.selected.kind === 'node'
       ? inner.querySelector('[data-node="' + state.selected.key + '"]')
       : inner.querySelector('[data-edge="' + state.selected.key + '"]');
     if (sel) sel.classList.add('selected');
     applyHandles();
+  }
+
+  function setSelection(names) {
+    state.selection = names || [];
+    applySelection();
+    inspect();
   }
 
   function markDirty() {
@@ -602,10 +863,10 @@ const PAGE_JS = `
     scheduleYamlSync();
   }
 
-  // one Save, one rule: enabled when the canvas model is dirty, or when the
-  // YAML text was edited in edit mode. Never two competing save buttons.
+  // one Save, one rule: enabled when the canvas model is dirty, when the
+  // YAML text was edited in edit mode, or when the runtime was switched.
   function updateSaveBtn() {
-    saveBtn.disabled = !(state.dirty || (state.yamlMode && state.yamlEdited));
+    saveBtn.disabled = !(state.dirty || (state.yamlMode && state.yamlEdited) || state.runtimeDirty);
   }
 
   // the YAML pane is a read-only projection of the canvas: visual edits re-sync
@@ -626,7 +887,7 @@ const PAGE_JS = `
 
   // one save flight at a time
   function setSaving(on) {
-    saveBtn.disabled = on || !(state.dirty || (state.yamlMode && state.yamlEdited));
+    saveBtn.disabled = on || !(state.dirty || (state.yamlMode && state.yamlEdited) || state.runtimeDirty);
     if (on) { statusEl.textContent = S.saving; statusEl.className = 'status warn'; }
   }
 
@@ -657,7 +918,7 @@ const PAGE_JS = `
     var svg = '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">';
     Object.keys(L.pos).forEach(function (n) {
       var p = L.pos[n], sz = RG.sizeOf(state.graph, n);
-      svg += '<rect class="mm-node' + (n === state.graph.entry ? ' entry' : '') + '" x="' + (p.x * s).toFixed(1) + '" y="' + (p.y * s).toFixed(1) + '" width="' + Math.max(2, sz.w * s) + '" height="' + Math.max(2, sz.h * s) + '" rx="1.5"/>';
+      svg += '<rect class="mm-node' + (n === state.graph.entry ? ' entry' : '') + '" x="' + ((p.x - L.minX) * s).toFixed(1) + '" y="' + ((p.y - L.minY) * s).toFixed(1) + '" width="' + Math.max(2, sz.w * s) + '" height="' + Math.max(2, sz.h * s) + '" rx="1.5"/>';
     });
     var rect = canvas.getBoundingClientRect();
     var vx = (-view.x / view.k) * s, vy = (-view.y / view.k) * s;
@@ -665,15 +926,18 @@ const PAGE_JS = `
     svg += '</svg>';
     minimapEl.innerHTML = svg;
     minimapEl._scale = s;
+    minimapEl._origin = { x: L.minX, y: L.minY };
   }
   function minimapJump(e) {
     var box = minimapEl.getBoundingClientRect();
     var s = minimapEl._scale;
+    var o = minimapEl._origin || { x: 0, y: 0 };
     if (!s) return;
-    var mx = (e.clientX - box.left) / s, my = (e.clientY - box.top) / s;
+    // mm coords → graph coords (offset by the viewBox origin), then center the view
+    var mx = (e.clientX - box.left) / s + o.x, my = (e.clientY - box.top) / s + o.y;
     var rect = canvas.getBoundingClientRect();
-    view.x = rect.width / 2 - mx * view.k;
-    view.y = rect.height / 2 - my * view.k;
+    view.x = rect.width / 2 - (mx - o.x) * view.k;
+    view.y = rect.height / 2 - (my - o.y) * view.k;
     state.viewTouched = true;
     applyView();
   }
@@ -700,12 +964,21 @@ const PAGE_JS = `
     applyView();
   }
   function toSvg(clientX, clientY) {
+    // client → graph coordinates: the viewBox origin can be negative (the
+    // canvas is unbounded), so element coords shift by the layout origin
+    var o = state.origin || { x: 0, y: 0 };
     var rect = canvas.getBoundingClientRect();
-    return { x: (clientX - rect.left - view.x) / view.k, y: (clientY - rect.top - view.y) / view.k };
+    return {
+      x: (clientX - rect.left - view.x) / view.k + o.x,
+      y: (clientY - rect.top - view.y) / view.k + o.y,
+    };
   }
 
   canvas.addEventListener('pointerdown', function (e) {
-    if (e.button !== 0) return; // left button only — right/middle never drag
+    // the dock/minimap/messages are chrome, not canvas — clicks there belong
+    // to the buttons and must never pan, marquee or deselect
+    if (e.target.closest && e.target.closest('.dock, .minimap, .messages, .marquee')) return;
+    if (e.button !== 0 && e.button !== 1) return; // left pans/selects, middle pans
     var handleEl = e.target.closest ? e.target.closest('[data-handle]') : null;
     var portEl = e.target.closest ? e.target.closest('[data-port]') : null;
     var nodeEl = e.target.closest ? e.target.closest('[data-node]') : null;
@@ -737,9 +1010,22 @@ const PAGE_JS = `
       var name = nodeEl.getAttribute('data-node');
       var p = state.graph.positions && state.graph.positions[name];
       var current = p || svgNodePos(name);
-      dragState = { kind: 'node', active: false, moved: false, key: name, startClient: { x: e.clientX, y: e.clientY }, startPos: current };
+      // multi-drag: grabbing a marquee-selected node moves the whole set
+      var multi = (state.selection || []).indexOf(name) !== -1 && state.selection.length > 1;
+      dragState = {
+        kind: 'node', active: false, moved: false, key: name,
+        startClient: { x: e.clientX, y: e.clientY }, startPos: current,
+        alignTargets: null, // built lazily on first active move
+        multi: multi ? state.selection.slice() : null,
+        multiStart: null, // filled when the drag activates
+      };
     } else {
-      dragState = { kind: 'pan', active: false, moved: false, startClient: { x: e.clientX, y: e.clientY }, startView: { x: view.x, y: view.y } };
+      // canvas-app convention (Miro/Lucid): plain left-drag pans the canvas;
+      // Shift+left-drag is the rubber-band selection
+      var marquee = e.shiftKey && e.button === 0;
+      dragState = marquee
+        ? { kind: 'marquee', active: false, moved: false, startClient: { x: e.clientX, y: e.clientY } }
+        : { kind: 'pan', active: false, moved: false, startClient: { x: e.clientX, y: e.clientY }, startView: { x: view.x, y: view.y } };
     }
   });
 
@@ -758,7 +1044,12 @@ const PAGE_JS = `
     if (!dragState.active && Math.hypot(dx, dy) > 5) {
       dragState.active = true;
       if (dragState.kind === 'pan') canvas.classList.add('panning');
-      else if (dragState.kind === 'node') { pushHistory('drag:' + dragState.key); dismissHint(); }
+      else if (dragState.kind === 'marquee') { marqueeEl.classList.add('on'); canvas.classList.add('marqueeing'); dismissHint(); }
+      else if (dragState.kind === 'node') {
+        pushHistory('drag:' + dragState.key + (dragState.multi ? ':multi' : ''));
+        if (dragState.multi) select({ kind: 'node', key: dragState.key });
+        dismissHint();
+      }
     }
     if (!dragState.active) return;
     if (Math.hypot(dx, dy) > 5) dragState.moved = true;
@@ -768,21 +1059,60 @@ const PAGE_JS = `
       view.y = dragState.startView.y + dy;
       state.viewTouched = true;
       applyView();
-    } else if (dragState.kind === 'node') {
-      var svg = toSvg(e.clientX, e.clientY);
-      var startSvg = toSvg(dragState.startClient.x, dragState.startClient.y);
+    } else if (dragState.kind === 'marquee') {
+      updateMarquee(e);
+    } else if (dragState.kind === 'node' && dragState.multi) {
+      // move the whole marquee set by the same screen delta (no snap, no
+      // guides — Figma keeps multi-drags free)
+      var k2 = view.k;
+      var gdx = (e.clientX - dragState.startClient.x) / k2;
+      var gdy = (e.clientY - dragState.startClient.y) / k2;
+      if (!dragState.multiStart) {
+        dragState.multiStart = {};
+        dragState.multi.forEach(function (n) {
+          dragState.multiStart[n] = (state.graph.positions && state.graph.positions[n]) || svgNodePos(n);
+        });
+      }
       if (!state.graph.positions) state.graph.positions = {};
-      var bounds = RG.layout(state.graph);
-      var nx = Math.round(dragState.startPos.x + (svg.x - startSvg.x));
-      var ny = Math.round(dragState.startPos.y + (svg.y - startSvg.y));
+      dragState.multi.forEach(function (n) {
+        state.graph.positions[n] = {
+          x: Math.round(dragState.multiStart[n].x + gdx),
+          y: Math.round(dragState.multiStart[n].y + gdy),
+        };
+      });
+      markDirty();
+      render();
+    } else if (dragState.kind === 'node') {
+      // screen-space delta → graph delta: immune to origin shifts (the
+      // viewBox origin moves when the canvas grows past top/left)
+      var k = view.k;
+      var nx = Math.round(dragState.startPos.x + (e.clientX - dragState.startClient.x) / k);
+      var ny = Math.round(dragState.startPos.y + (e.clientY - dragState.startClient.y) / k);
       if (!e.shiftKey) { nx = Math.round(nx / 8) * 8; ny = Math.round(ny / 8) * 8; } // snap to grid; Shift = free
-      var sz = RG.sizeOf(state.graph, dragState.key);
-      // clamp: a node can never leave the canvas (negative coords clip out of the viewBox)
-      nx = Math.max(8, Math.min(nx, bounds.width - sz.w - 8));
-      ny = Math.max(8, Math.min(ny, bounds.height - sz.h - 8));
+      // alignment guides: snap edges/centers to other nodes (beats grid snap)
+      if (!e.shiftKey) {
+        var al = alignTo(dragState.key, nx, ny);
+        nx = al.nx; ny = al.ny; state.guides = al.lines;
+      } else {
+        state.guides = [];
+      }
+      if (!state.graph.positions) state.graph.positions = {};
+      // unbounded: no clamps — the canvas grows wherever the node goes,
+      // every direction alike (the viewBox adapts via minX/minY)
       state.graph.positions[dragState.key] = { x: nx, y: ny };
       markDirty();
       render();
+      // camera follow (Figma/tldraw feel): a narrow dead-zone band and a slow,
+      // proportional scroll — the view drifts with the cursor, never jumps
+      var rect = canvas.getBoundingClientRect();
+      var M = 36, SP = 0.1;
+      var lx = e.clientX - rect.left, ly = e.clientY - rect.top;
+      var panned = false;
+      if (lx < M) { view.x += (M - lx) * SP; panned = true; }
+      else if (lx > rect.width - M) { view.x -= (M - (rect.width - lx)) * SP; panned = true; }
+      if (ly < M) { view.y += (M - ly) * SP; panned = true; }
+      else if (ly > rect.height - M) { view.y -= (M - (rect.height - ly)) * SP; panned = true; }
+      if (panned) { state.viewTouched = true; applyView(); }
     } else {
       updateRubber(e);
       highlightDropTarget(e);
@@ -798,7 +1128,10 @@ const PAGE_JS = `
     var ds = dragState;
     dragState = null;
     canvas.classList.remove('panning');
-    if (ds.kind === 'node' && ds.active) {
+    clearGuides();
+    if (ds.kind === 'marquee' && ds.active) {
+      endMarquee();
+    } else if (ds.kind === 'node' && ds.active) {
       select({ kind: 'node', key: ds.key });
       resolveOverlap(ds.key);
       suppressNextClick = true;
@@ -824,8 +1157,11 @@ const PAGE_JS = `
   window.addEventListener('pointercancel', function () {
     dragState = null;
     canvas.classList.remove('panning');
+    canvas.classList.remove('marqueeing');
+    marqueeEl.classList.remove('on');
     removeRubber();
     clearDropTargets();
+    clearGuides();
   });
 
   // ---------- rubber band + drop targets (connect / rewire) ----------
@@ -911,8 +1247,7 @@ const PAGE_JS = `
       });
       if (!hit) break;
       moved = true;
-      p.x += 28;
-      if (p.x > bounds.width - s.w - 8) { p.x = 8; p.y += 28; }
+      p.x += 28; p.y += 28; // diagonal nudge — the canvas is unbounded, no wrap needed
     }
     if (moved) { markDirty(); render(); }
   }
@@ -932,9 +1267,11 @@ const PAGE_JS = `
     requestAnimationFrame(function () { var w = document.getElementById('edge-when'); if (w) w.focus(); });
   }
 
-  // click selection (delegated; suppressed right after a drag)
+  // click selection (delegated; suppressed right after a drag; chrome clicks
+  // — dock/minimap/messages — never reach the canvas semantics)
   canvas.addEventListener('click', function (e) {
     if (suppressNextClick) return;
+    if (e.target.closest && e.target.closest('.dock, .minimap, .messages')) return;
     var nodeEl = e.target.closest ? e.target.closest('[data-node]') : null;
     var edgeEl = e.target.closest ? e.target.closest('[data-edge]') : null;
     if (state.connect) {
@@ -960,21 +1297,45 @@ const PAGE_JS = `
     applyView();
   }, { passive: false });
 
-  // double-click = edit in place: select and land focused in the right field
+  // double-click = edit in place: select and land focused in the right field;
+  // on EMPTY canvas it creates a node right there (FigJam muscle memory)
   canvas.addEventListener('dblclick', function (e) {
     var nodeEl = e.target.closest ? e.target.closest('[data-node]') : null;
     var edgeEl = !nodeEl && e.target.closest ? e.target.closest('[data-edge]') : null;
     if (nodeEl) {
+      // selecting a node from a hidden panel reveals it — the inspector IS
+      // the node editor, dblclick means "edit this"
+      if (inspector.classList.contains('hidden')) setInspector(true);
       select({ kind: 'node', key: nodeEl.getAttribute('data-node') });
       requestAnimationFrame(function () { var i = document.getElementById('node-id'); if (i) { i.focus(); i.select(); } });
     } else if (edgeEl) {
+      if (inspector.classList.contains('hidden')) setInspector(true);
       select({ kind: 'edge', key: Number(edgeEl.getAttribute('data-edge')) });
       requestAnimationFrame(function () { var i = document.getElementById('edge-when'); if (i) i.focus(); });
+    } else if (!e.target.closest || !e.target.closest('.dock, .minimap, .messages, .status')) {
+      // empty canvas → spawn an agent under the cursor
+      pushHistory('add-node');
+      var base = S.newNodeBase, n = 1;
+      while (state.graph.nodes[base + '-' + n]) n++;
+      var name = base + '-' + n;
+      state.graph.nodes[name] = {
+        label: name.toUpperCase(),
+        model: Object.keys(rtTable('MODELS') || {})[0] || 'balanced',
+        effort: Object.keys(rtTable('EFFORT') || {})[0] || 'standard',
+      };
+      var spot = toSvg(e.clientX, e.clientY);
+      if (!state.graph.positions) state.graph.positions = {};
+      state.graph.positions[name] = {
+        x: Math.round(spot.x - RG.NODE_W / 2),
+        y: Math.round(spot.y - RG.NODE_H / 2),
+      };
+      markDirty(); render(); select({ kind: 'node', key: name });
     }
   });
 
   function select(sel) {
     state.selected = sel;
+    if (sel) state.selection = []; // single selection replaces the marquee set
     if (sel) dismissHint();
     applySelection();
     inspect();
@@ -1043,19 +1404,12 @@ const PAGE_JS = `
     wrap.appendChild(c); wrap.appendChild(lab);
     return wrap;
   }
+  // destructive action, no confirmation — undo (Ctrl+Z) is the safety net,
+  // and the delete toast reminds of it
   function dangerButton(text, onclick) {
     var b = document.createElement('button');
     b.className = 'danger'; b.textContent = text;
-    var armed = false, timer = null;
-    b.addEventListener('click', function () {
-      if (!armed) {
-        armed = true; b.textContent = S.confirmDelete; b.classList.add('armed');
-        timer = setTimeout(function () { armed = false; b.textContent = text; b.classList.remove('armed'); }, 3000);
-        return;
-      }
-      clearTimeout(timer);
-      onclick();
-    });
+    b.addEventListener('click', onclick);
     return b;
   }
 
@@ -1064,9 +1418,10 @@ const PAGE_JS = `
   // design skills on @gate) are never shown. node.skills overrides the default.
   // Inherited checkboxes are read-only: materializing an override is an explicit
   // button, so a casual click can never silently fork the agent's list.
-  function skillsField(node) {
+  function skillsField(node, nodeName) {
     var registry = state.config.SKILLS || {};
-    var pool = agentDefaults(node.agent);
+    var isNew = !agentExists(nodeName); // agent is scaffolded on save — skills come later
+    var pool = isNew ? [] : agentDefaults(nodeName);
     var wrap = document.createElement('div');
     wrap.className = 'field skills-field';
     var lab = document.createElement('label');
@@ -1074,15 +1429,20 @@ const PAGE_JS = `
     wrap.appendChild(lab);
     var hint = document.createElement('div');
     hint.className = 'skills-hint';
+    if (isNew) {
+      hint.textContent = S.skillsPending;
+      wrap.appendChild(hint);
+      return wrap;
+    }
     if (!pool.length) {
-      hint.textContent = S.skillsNone.split('{agent}').join(node.agent);
+      hint.textContent = S.skillsNone.split('{agent}').join(nodeName);
       wrap.appendChild(hint);
       return wrap;
     }
     var overridden = node.skills !== undefined;
     hint.textContent = overridden
       ? S.skillsOverride
-      : S.skillsInherited.split('{agent}').join(node.agent);
+      : S.skillsInherited.split('{agent}').join(nodeName);
     wrap.appendChild(hint);
     pool.forEach(function (skill) {
       var effective = overridden ? node.skills : pool;
@@ -1134,6 +1494,75 @@ const PAGE_JS = `
     return wrap;
   }
 
+  // Prompt editor — the agent's brain, editable without leaving the studio.
+  // Loads lazily via /api/prompt/:id; saves directly to prompt.md (the next
+  // graph Save recompiles it into the runtime artifacts).
+  function promptField(nodeName) {
+    var wrap = document.createElement('div');
+    wrap.className = 'field prompt-field';
+    var lab = document.createElement('label');
+    lab.textContent = S.promptField;
+    wrap.appendChild(lab);
+    var hint = document.createElement('div');
+    hint.className = 'skills-hint';
+    hint.textContent = S.promptPending;
+    wrap.appendChild(hint);
+
+    var isNew = !agentExists(nodeName);
+    if (isNew) return wrap; // scaffolded on Save — editor appears then
+
+    var row = document.createElement('div');
+    row.className = 'prompt-row';
+    var ta = document.createElement('textarea');
+    ta.className = 'prompt-area';
+    ta.rows = 14;
+    ta.spellcheck = false;
+    ta.readOnly = true;
+    ta.value = S.statusLoading;
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'prompt-save';
+    saveBtn.textContent = 'Save prompt';
+    saveBtn.disabled = true;
+    row.appendChild(ta);
+    wrap.appendChild(row);
+    wrap.appendChild(saveBtn);
+
+    var dirty = false;
+    api('/api/prompt/' + nodeName).then(function (r) {
+      if (!r.body || !r.body.ok) { ta.value = S.promptLoadFail; return; }
+      if (r.body.prompt === null) { // scaffolded dir missing — stale roster
+        hint.textContent = S.promptPending;
+        ta.value = '';
+        return;
+      }
+      ta.value = r.body.prompt;
+      ta.readOnly = false;
+      hint.textContent = S.promptHint.split('{a}').join(nodeName);
+    });
+
+    function setDirty(d) {
+      dirty = d;
+      saveBtn.disabled = !d;
+      saveBtn.textContent = d ? S.promptDirty : 'Save prompt';
+    }
+    ta.addEventListener('input', function () { setDirty(true); });
+    saveBtn.addEventListener('click', function () {
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'saving…';
+      fetch('/api/prompt/' + nodeName, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: ta.value }),
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (!j.ok) { toast((j.errors || ['save failed'])[0], 'err'); setDirty(true); return; }
+        setDirty(false);
+        toast(S.promptSaved, 'ok');
+        markDirty(); // graph save triggers the recompile that propagates it
+      }).catch(function () { toast(S.promptLoadFail, 'err'); setDirty(true); });
+    });
+    return wrap;
+  }
+
   function renameNode(oldName, newName) {
     newName = newName.trim();
     if (!newName || newName === oldName || state.graph.nodes[newName]) return;
@@ -1154,15 +1583,24 @@ const PAGE_JS = `
     state.selected = { kind: 'node', key: newName };
   }
 
-  // rename commits on blur/Enter (Escape cancels) — never per keystroke
+  // The label is the identity: the id is its slug. Renaming re-slugs the node
+  // (and everything that references it); a slug collision is a naming
+  // collision — the user differentiates (that's how two self-critiques coexist).
   function tryRename(oldName, v) {
     v = (v || '').trim();
-    if (v === oldName) return;
+    if (v === (state.graph.nodes[oldName].label || oldName)) return;
     if (!v) { toast(S.renameEmpty, 'err'); render(); inspect(); return; }
-    if (!/^[a-z0-9][a-z0-9-]*$/.test(v)) { toast(S.renameChars, 'err'); render(); inspect(); return; }
-    if (state.graph.nodes[v]) { toast(S.renameTaken, 'err'); render(); inspect(); return; }
+    var slug = slugify(v);
+    if (!slug) { toast(S.renameChars, 'err'); render(); inspect(); return; }
+    if (state.graph.nodes[slug] && slug !== oldName) {
+      toast(S.renameTaken, 'err');
+      toast(S.nameSuggestion.split('{s}').join(v + ' 2'), 'ok');
+      render(); inspect(); return;
+    }
     pushHistory('rename');
-    renameNode(oldName, v); markDirty(); render(); inspect();
+    state.graph.nodes[oldName].label = v;
+    if (slug !== oldName) renameNode(oldName, slug);
+    markDirty(); render(); inspect();
   }
   function commitInput(value, oncommit) {
     var i = document.createElement('input');
@@ -1181,21 +1619,19 @@ const PAGE_JS = `
   }
   function wireClose() {
     var b = document.getElementById('insp-close');
-    if (b) b.addEventListener('click', function () { state.inspectorPinned = false; select(null); });
+    if (b) b.addEventListener('click', function () { setInspector(false); });
   }
 
   function inspect() {
-    // the panel earns its 330px only when it has content — or when pinned open
-    if (!state.selected && !state.inspectorPinned) {
-      inspector.classList.remove('open');
-      inspector.innerHTML = '';
-      return;
-    }
-    inspector.classList.add('open');
+    // the panel is always mounted (left overlay); with nothing selected it
+    // shows the orientation copy instead of going away
     if (!state.selected) {
+      var multi = (state.selection || []).length;
       inspector.innerHTML =
         '<div class="inspector-head"><span>' + S.inspectorTitle + '</span>' + closeBtn() + '</div>' +
-        '<div class="inspector-empty">' + S.inspectorEmpty + '</div>';
+        (multi > 1
+          ? '<div class="inspector-empty"><strong>' + S.nSelected.replace('{n}', multi) + '</strong><br><br>' + S.nSelectedHint + '</div>'
+          : '<div class="inspector-empty">' + S.inspectorEmpty + '</div>');
       wireClose();
       return;
     }
@@ -1209,14 +1645,26 @@ const PAGE_JS = `
       var body = document.createElement('div');
       body.className = 'inspector-body';
 
-      var idInput = commitInput(name, function (v) { tryRename(name, v); });
-      idInput.id = 'node-id';
-      body.appendChild(field(S.fieldId, idInput));
-      body.appendChild(field(S.fieldLabel, textInput(node.label, function (v) { pushHistory('field:' + name + ':label'); node.label = v; markDirty(); render(); })));
+      if (!node.terminal && !agentExists(name)) {
+        var fresh = document.createElement('div');
+        fresh.className = 'skills-hint';
+        fresh.style.marginBottom = '.55rem';
+        fresh.textContent = node.based_on ? S.agentSeeded.split('{base}').join(node.based_on) : S.agentNew;
+        body.appendChild(fresh);
+      }
+
+      // the NAME is the identity — the id is its slug, derived and never shown
+      var nameInput = commitInput(node.label || name, function (v) { tryRename(name, v); });
+      nameInput.id = 'node-id';
+      var nameField = field(S.fieldLabel, nameInput);
+      var nameHint = document.createElement('div');
+      nameHint.className = 'skills-hint';
+      nameHint.textContent = S.fieldLabelHint;
+      nameField.appendChild(nameHint);
+      body.appendChild(nameField);
       if (!node.terminal) {
-        body.appendChild(field(S.fieldAgent, selectInput(agentNames(), node.agent, function (v) { pushHistory('sel:' + name + ':agent'); node.agent = v; markDirty(); render(); inspect(); })));
-        body.appendChild(field(S.fieldModel, selectInput(tierOptions(state.config.MODELS), node.model, function (v) { pushHistory('sel:' + name + ':model'); node.model = v; markDirty(); render(); })));
-        body.appendChild(field(S.fieldEffort, selectInput(tierOptions(state.config.EFFORT), node.effort, function (v) { pushHistory('sel:' + name + ':effort'); node.effort = v; markDirty(); render(); })));
+        body.appendChild(field(S.fieldModel, selectInput(tierOptions(rtTable('MODELS')), node.model, function (v) { pushHistory('sel:' + name + ':model'); node.model = v; markDirty(); render(); })));
+        body.appendChild(field(S.fieldEffort, selectInput(tierOptions(rtTable('EFFORT')), node.effort, function (v) { pushHistory('sel:' + name + ':effort'); node.effort = v; markDirty(); render(); })));
         body.appendChild(field(S.fieldLane, selectInput(['spine', 'above', 'below'], node.lane || 'spine', function (v) {
           pushHistory('sel:' + name + ':lane');
           if (v === 'spine') delete node.lane; else node.lane = v;
@@ -1224,7 +1672,8 @@ const PAGE_JS = `
           markDirty(); render();
         })));
         body.appendChild(field(S.fieldSummary, areaInput(node.summary, function (v) { pushHistory('field:' + name + ':summary'); node.summary = v; markDirty(); render(); })));
-        body.appendChild(skillsField(node));
+        body.appendChild(skillsField(node, name));
+        body.appendChild(promptField(name));
         body.appendChild(checkInput(S.fieldOptional, node.optional, function (v) { pushHistory('flag:' + name + ':optional'); node.optional = v; markDirty(); render(); }));
       }
       // terminal is non-destructive: phase data (agent/model/effort/summary) stays
@@ -1310,6 +1759,7 @@ const PAGE_JS = `
         : !state.graph.edges[state.selected.key];
       if (gone) state.selected = null;
     }
+    if (state.selection) state.selection = state.selection.filter(function (n) { return !!state.graph.nodes[n]; });
     markDirty(); render(); inspect();
   }
   function undo() {
@@ -1323,19 +1773,22 @@ const PAGE_JS = `
     restoreFrom(state.future.pop());
   }
 
-  var keyDelete = { armed: false, timer: null };
-  function requestDelete() {
-    if (!keyDelete.armed) {
-      keyDelete.armed = true;
-      toast(S.confirmDeleteHint, 'warn');
-      keyDelete.timer = setTimeout(function () { keyDelete.armed = false; }, 3000);
+  function deleteSelected() {
+    // marquee set: delete every member — undo restores the whole set
+    if (!state.selected && (state.selection || []).length > 1) {
+      pushHistory('delete-multi');
+      var names = state.selection.slice();
+      names.forEach(function (name) {
+        delete state.graph.nodes[name];
+        if (state.graph.positions) delete state.graph.positions[name];
+      });
+      var dead = new Set(names);
+      state.graph.edges = state.graph.edges.filter(function (e) { return !dead.has(e.from) && !dead.has(e.to); });
+      state.selection = [];
+      markDirty(); render(); inspect();
+      toast(S.deletedUndo, 'warn');
       return;
     }
-    clearTimeout(keyDelete.timer); keyDelete.armed = false;
-    deleteSelected();
-  }
-
-  function deleteSelected() {
     if (!state.selected) return;
     pushHistory('delete');
     if (state.selected.kind === 'node') {
@@ -1347,6 +1800,7 @@ const PAGE_JS = `
       state.graph.edges.splice(state.selected.key, 1);
     }
     state.selected = null; markDirty(); render(); inspect();
+    toast(S.deletedUndo, 'warn');
   }
 
   function nudge(name, key, step) {
@@ -1374,15 +1828,14 @@ const PAGE_JS = `
     while (state.graph.nodes[name]) { name = base + '-' + n; n++; }
     var copy = JSON.parse(JSON.stringify(node));
     copy.label = (node.label || src.toUpperCase()) + ' COPY';
+    // the copy is a NEW agent seeded from the source — same config and prompt,
+    // but unlinked: editing either never touches the other (consumed on save)
+    if (!node.terminal && agentExists(src)) copy.based_on = src;
+    delete copy.terminal;
     state.graph.nodes[name] = copy;
     var p = (state.graph.positions && state.graph.positions[src]) || svgNodePos(src);
     if (!state.graph.positions) state.graph.positions = {};
-    var bounds = RG.layout(state.graph);
-    var s = RG.sizeOf(state.graph, name);
-    state.graph.positions[name] = {
-      x: Math.max(8, Math.min(p.x + 28, bounds.width - s.w - 8)),
-      y: Math.max(8, Math.min(p.y + 24, bounds.height - s.h - 8)),
-    };
+    state.graph.positions[name] = { x: p.x + 28, y: p.y + 24 };
     markDirty(); render(); select({ kind: 'node', key: name });
   }
 
@@ -1410,7 +1863,7 @@ const PAGE_JS = `
     }
     if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redo(); return; }
     if (e.key === '0') { fitView(); return; }
-    if (e.key === 'Enter' || e.key === ' ') {
+    if (e.key === 'Enter') {
       var nEl = e.target && e.target.closest ? e.target.closest('[data-node]') : null;
       var eEl = !nEl && e.target && e.target.closest ? e.target.closest('[data-edge]') : null;
       // keyboard parity: Enter on a target node completes a pending connection
@@ -1420,11 +1873,17 @@ const PAGE_JS = `
     }
     if (e.key === 'Escape') {
       if (state.connect) cancelConnect();
-      else select(null);
+      else { select(null); setSelection([]); }
       return;
     }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selected) {
-      e.preventDefault(); requestDelete(); return;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && (state.selected || (state.selection || []).length)) {
+      e.preventDefault(); deleteSelected(); return;
+    }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'a' || e.key === 'A')) {
+      e.preventDefault();
+      setSelection(Object.keys(state.graph.nodes));
+      state.selected = null;
+      return;
     }
     if (e.key.indexOf('Arrow') === 0) {
       e.preventDefault();
@@ -1442,6 +1901,30 @@ const PAGE_JS = `
     }
   });
 
+  // dock buttons never take focus: mousedown is cancelled so the keyboard
+  // (Delete, arrows, Ctrl+Z…) and the canvas selection stay exactly where
+  // they were. Form controls (the runtime select) keep their NATIVE
+  // mousedown — preventDefault would kill the dropdown.
+  document.getElementById('dock').addEventListener('mousedown', function (e) {
+    if (e.target.closest('select, input, textarea')) return;
+    e.preventDefault();
+  });
+
+  // dock zoom buttons step the same wheel logic (centered on the canvas)
+  function zoomStep(dir) {
+    var rect = canvas.getBoundingClientRect();
+    var mx = rect.width / 2, my = rect.height / 2;
+    var dk = dir > 0 ? 1.2 : 1 / 1.2;
+    var k2 = Math.min(3, Math.max(0.25, view.k * dk));
+    view.x = mx - (mx - view.x) * (k2 / view.k);
+    view.y = my - (my - view.y) * (k2 / view.k);
+    view.k = k2;
+    state.viewTouched = true;
+    applyView();
+  }
+  document.getElementById('zoom-in').addEventListener('click', function () { zoomStep(1); });
+  document.getElementById('zoom-out').addEventListener('click', function () { zoomStep(-1); });
+
   // keep the graph framed on window resize — unless the user framed it themselves
   var resizeTimer = null;
   window.addEventListener('resize', function () {
@@ -1456,7 +1939,7 @@ const PAGE_JS = `
     var rect = canvas.getBoundingClientRect();
     var c = toSvg(rect.left + rect.width / 2, rect.top + rect.height / 2);
     var x = Math.round(c.x - RG.NODE_W / 2), y = Math.round(c.y - RG.NODE_H / 2);
-    var bounds = RG.layout(state.graph);
+    var bounds = RG.layout(state.graph); // rendered positions — clash detection
     for (var k = 0; k < 24; k++) {
       var clash = Object.keys(bounds.pos).some(function (n) {
         var p = bounds.pos[n], s = RG.sizeOf(state.graph, n);
@@ -1466,10 +1949,7 @@ const PAGE_JS = `
       if (!clash) break;
       x += 28; y += 24;
     }
-    return {
-      x: Math.max(8, Math.min(x, bounds.width - RG.NODE_W - 8)),
-      y: Math.max(8, Math.min(y, bounds.height - RG.NODE_H - 8)),
-    };
+    return { x: x, y: y };
   }
   document.getElementById('add-node').addEventListener('click', function () {
     pushHistory('add-node');
@@ -1477,10 +1957,9 @@ const PAGE_JS = `
     while (state.graph.nodes[base + '-' + n]) n++;
     var name = base + '-' + n;
     state.graph.nodes[name] = {
-      agent: agentNames()[0],
-      model: Object.keys(state.config.MODELS || {})[0],
-      effort: Object.keys(state.config.EFFORT || {})[0],
       label: name.toUpperCase(),
+      model: Object.keys(rtTable('MODELS') || {})[0] || 'balanced',
+      effort: Object.keys(rtTable('EFFORT') || {})[0] || 'standard',
     };
     if (!state.graph.positions) state.graph.positions = {};
     state.graph.positions[name] = spawnSpot();
@@ -1514,24 +1993,57 @@ const PAGE_JS = `
     yamlDrawer.classList.toggle('open', opening);
     fitView(); // the canvas just gained/lost 38vh — re-fit so nothing slides under the drawer
   });
-  document.getElementById('inspector-toggle').addEventListener('click', function () {
-    if (inspector.classList.contains('open')) {
-      state.inspectorPinned = false;
-      state.selected = null;
-      applySelection();
-    } else {
-      state.inspectorPinned = true;
-    }
-    inspect();
+  // ---------- inspector toggle ----------
+  // the flap rides the panel's right edge; hiding collapses the panel (width
+  // animation) and parks the flap at the canvas edge — always one click back.
+  // (function declarations hoist, so wireClose/dblclick may call it earlier)
+  var inspToggle = document.getElementById('insp-flap');
+  function setInspector(open) {
+    inspector.classList.toggle('hidden', !open);
+    inspToggle.classList.toggle('closed', !open);
+    inspToggle.setAttribute('aria-expanded', String(open));
+    if (open) state.inspectorPinned = true;
+    // the canvas just gained/lost 330px — re-frame unless the user framed it themselves
+    setTimeout(function () { if (!state.viewTouched) fitView(); }, 240);
+  }
+  inspToggle.addEventListener('click', function () {
+    setInspector(!inspector.classList.contains('hidden'));
   });
   document.getElementById('fit-view').addEventListener('click', fitView);
+
+  // ---------- runtime selector ----------
+  // models and efforts adapt to where the workflow will run; switching is
+  // free (client-side re-filter) and persists to rensei.config.yaml on Save
+  var runtimeSel = document.getElementById('runtime');
+  runtimeSel.title = S.runtimeTitle;
+  runtimeSel.addEventListener('change', function () {
+    if (runtimeSel.value === state.runtime) return;
+    var oldRt = state.runtime;
+    var newRt = runtimeSel.value;
+    // per-provider memory: stash each agent's tier for the runtime being left,
+    // restore its last tier for the runtime being entered (node.models map in
+    // the YAML). Switching claude → codex → claude round-trips every choice.
+    Object.keys(state.graph.nodes).forEach(function (n) {
+      var node = state.graph.nodes[n];
+      if (node.terminal) return;
+      if (!node.models || typeof node.models !== 'object') node.models = {};
+      node.models[oldRt] = node.model;
+      if (node.models[newRt]) node.model = node.models[newRt];
+    });
+    state.runtime = newRt;
+    state.runtimeDirty = true;
+    updateSaveBtn();
+    statusEl.textContent = S.runtimeDirty;
+    statusEl.className = 'status warn';
+    inspect(); // re-render tier selects with the new runtime's tables
+  });
 
   // ---------- theme (shared key across studio + diagram) ----------
   var themeBtn = document.getElementById('theme-toggle');
   var THEME_ICONS = {
-    auto: '<svg viewBox="0 0 14 14" width="13" height="13" aria-hidden="true"><circle cx="7" cy="7" r="5.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7 1.7 A5.3 5.3 0 0 1 7 12.3 Z" fill="currentColor"/></svg>',
-    light: '<svg viewBox="0 0 14 14" width="13" height="13" aria-hidden="true"><circle cx="7" cy="7" r="3.2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7 .7v1.7M7 11.6v1.7M.7 7h1.7M11.6 7h1.7M2.6 2.6l1.2 1.2M10.2 10.2l1.2 1.2M11.4 2.6l-1.2 1.2M3.8 10.2l-1.2 1.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
-    dark: '<svg viewBox="0 0 14 14" width="13" height="13" aria-hidden="true"><path d="M12 8.8 A5.5 5.5 0 1 1 5.2 2 A4.4 4.4 0 0 0 12 8.8 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>',
+    auto: '<svg viewBox="0 0 14 14" width="15" height="15" aria-hidden="true"><circle cx="7" cy="7" r="5.3" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7 1.7 A5.3 5.3 0 0 1 7 12.3 Z" fill="currentColor"/></svg>',
+    light: '<svg viewBox="0 0 14 14" width="15" height="15" aria-hidden="true"><circle cx="7" cy="7" r="3.2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7 .7v1.7M7 11.6v1.7M.7 7h1.7M11.6 7h1.7M2.6 2.6l1.2 1.2M10.2 10.2l1.2 1.2M11.4 2.6l-1.2 1.2M3.8 10.2l-1.2 1.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>',
+    dark: '<svg viewBox="0 0 14 14" width="15" height="15" aria-hidden="true"><path d="M12 8.8 A5.5 5.5 0 1 1 5.2 2 A4.4 4.4 0 0 0 12 8.8 Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>',
   };
   function themeMode() { try { return localStorage.getItem('rk-theme') || 'auto'; } catch (e) { return 'auto'; } }
   function applyTheme(mode) {
@@ -1557,15 +2069,29 @@ const PAGE_JS = `
     yamlArea.value = r.body.yamlText;
     state.dirty = false;
     state.yamlEdited = false;
+    state.runtimeDirty = false;
     state.problems = null;
     applyProblemMarks();
     setYamlMode(false);
     updateSaveBtn();
     statusEl.textContent = S.savedRecompiled;
     statusEl.className = 'status ok';
-    toast(nstr(fromYaml ? 'savedYamlFilesOne' : 'savedFilesOne', fromYaml ? 'savedYamlFilesMany' : 'savedFilesMany', (r.body.rebuilt || []).length), 'ok');
+    var scaffolded = r.body.scaffolded || [];
+    if (scaffolded.length) {
+      toast(nstr('scaffoldedOne', 'scaffoldedMany', (r.body.rebuilt || []).length)
+        .split('{a}').join(scaffolded.map(function (a) { return '@' + a; }).join(', ')), 'ok');
+    } else {
+      toast(nstr(fromYaml ? 'savedYamlFilesOne' : 'savedFilesOne', fromYaml ? 'savedYamlFilesMany' : 'savedFilesMany', (r.body.rebuilt || []).length), 'ok');
+    }
     showProblems([], r.body.warnings);
     if (fromYaml) { state.selected = null; render(); inspect(); } // graph was replaced — drop the stale selection
+    // new agents may exist now — refresh the roster so the inspector knows
+    api('/api/model').then(function (m) {
+      if (!m.body || !m.body.graph) return;
+      state.agents = m.body.agents || state.agents;
+      if (m.body.runtime) state.runtime = m.body.runtime;
+      inspect();
+    });
   }
   function saveFailed(r) {
     showProblems(r.body.errors, r.body.warnings, r.body.issues);
@@ -1589,7 +2115,7 @@ const PAGE_JS = `
       });
       return;
     }
-    api('/api/model', { graph: state.graph }).then(function (r) {
+    api('/api/model', { graph: state.graph, runtime: state.runtime }).then(function (r) {
       if (!r.body.ok) { saveFailed(r); return; }
       saveSucceeded(r, false);
     });
@@ -1650,18 +2176,24 @@ const PAGE_JS = `
 
   // ---------- modal shell ----------
   var modalRoot = document.getElementById('modal-root');
+  var modalClosing = false;
   function openModal(build) {
-    closeModal();
+    closeModal(true);
     var m = document.createElement('div');
     m.className = 'modal';
     modalRoot.appendChild(m);
     modalRoot.classList.add('on');
+    modalClosing = false;
     build(m);
     return m;
   }
-  function closeModal() {
+  function closeModal(instant) {
     modalRoot.classList.remove('on');
-    modalRoot.innerHTML = '';
+    if (instant || !modalRoot.children.length) { modalRoot.innerHTML = ''; return; }
+    if (modalClosing) return;
+    modalClosing = true;
+    modalRoot.classList.add('closing');
+    setTimeout(function () { modalRoot.innerHTML = ''; modalRoot.classList.remove('closing'); modalClosing = false; }, 140);
   }
   modalRoot.addEventListener('pointerdown', function (e) { if (e.target === modalRoot) closeModal(); });
   document.addEventListener('keydown', function (e) {
@@ -1744,6 +2276,14 @@ const PAGE_JS = `
   });
 
   // ---------- export (SVG from the server; PNG rasterized in-page) ----------
+  // The standalone SVG carries its own token values (server injects them) —
+  // without them every var(--rk-*) is undefined outside the page and the
+  // export renders as a black blob.
+  function currentTheme() {
+    var t = document.documentElement.dataset.theme;
+    if (t === 'light' || t === 'dark') return t;
+    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  }
   function download(blob, name) {
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
@@ -1752,7 +2292,8 @@ const PAGE_JS = `
     setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
   }
   function exportSvg() {
-    fetch('/api/export.svg')
+    // export what you SEE: the standalone SVG bakes the active theme's tokens
+    fetch('/api/export.svg?theme=' + currentTheme())
       .then(function (r) { if (!r.ok) throw 0; return r.text(); })
       .then(function (text) {
         download(new Blob([text], { type: 'image/svg+xml' }), 'rensei-graph.svg');
@@ -1761,7 +2302,8 @@ const PAGE_JS = `
       .catch(function () { toast(S.exportFail, 'err'); });
   }
   function exportPng() {
-    fetch('/api/export.svg')
+    // rasterize with the tokens of the CURRENT theme so image and background match
+    fetch('/api/export.svg?theme=' + currentTheme())
       .then(function (r) { if (!r.ok) throw 0; return r.text(); })
       .then(function (text) {
         var blob = new Blob([text], { type: 'image/svg+xml' });
@@ -1772,7 +2314,7 @@ const PAGE_JS = `
           var c = document.createElement('canvas');
           c.width = img.width * scale; c.height = img.height * scale;
           var ctx = c.getContext('2d');
-          ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--rk-ground').trim() || '#ffffff';
+          ctx.fillStyle = currentTheme() === 'dark' ? '#0e1013' : '#f4f5f7';
           ctx.fillRect(0, 0, c.width, c.height);
           ctx.drawImage(img, 0, 0, c.width, c.height);
           URL.revokeObjectURL(url);
@@ -1790,78 +2332,21 @@ const PAGE_JS = `
   document.getElementById('export-svg').addEventListener('click', exportSvg);
   document.getElementById('export-png').addEventListener('click', exportPng);
 
-  // ---------- kata routing simulator ----------
-  function openRouteModal() {
-    openModal(function (m) {
-      m.innerHTML =
-        '<div class="modal-head"><div><h2>' + S.routeTitle + '</h2></div></div>' +
-        '<div class="modal-body">' +
-        '<div class="sub" style="font-size:11px;color:var(--muted);margin-bottom:.55rem">' + S.routeSub + '</div>' +
-        '<div class="route-input"><textarea id="route-text" rows="2" placeholder="' + S.routePlaceholder + '"></textarea>' +
-        '<button id="route-run" class="primary" style="align-self:flex-end">' + S.routeRun + '</button></div>' +
-        '<div id="route-out"></div></div>';
-      var ta = m.querySelector('#route-text');
-      var out = m.querySelector('#route-out');
-      function run() {
-        var text = ta.value.trim();
-        if (!text) { out.textContent = ''; return; }
-        out.textContent = S.routeRunning;
-        api('/api/route', { text: text }).then(function (r) {
-          out.innerHTML = '';
-          var ms = (r.body && r.body.matches) || [];
-          if (!ms.length) {
-            var p = document.createElement('div');
-            p.className = 'route-winner';
-            p.textContent = S.routeEmpty;
-            out.appendChild(p);
-            return;
-          }
-          ms.forEach(function (mt, i) {
-            if (i === 0) {
-              var w = document.createElement('div');
-              w.className = 'route-winner';
-              var strong = document.createElement('strong');
-              strong.textContent = '@' + mt.agent;
-              w.appendChild(document.createTextNode(S.routeWinner + ' '));
-              w.appendChild(strong);
-              w.appendChild(document.createTextNode('  · score ' + mt.score));
-              out.appendChild(w);
-            } else {
-              var alt = document.createElement('div');
-              alt.className = 'route-alt';
-              alt.textContent = S.routeAlso + ': @' + mt.agent + ' (' + mt.score + ') — ' + mt.hits.slice(0, 3).map(function (h) { return '"' + h.trigger + '"'; }).join(', ');
-              out.appendChild(alt);
-            }
-            if (i === 0) mt.hits.slice(0, 6).forEach(function (h) {
-              var hit = document.createElement('div');
-              hit.className = 'route-hit';
-              hit.textContent = '"' + h.trigger + '" (' + h.lang + ') ×' + h.count + ' — ' + h.where;
-              out.appendChild(hit);
-            });
-          });
-        });
-      }
-      m.querySelector('#route-run').addEventListener('click', run);
-      ta.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); run(); }
-      });
-      setTimeout(function () { ta.focus(); }, 0);
-    });
-  }
-  document.getElementById('kata-btn').addEventListener('click', openRouteModal);
-
   // ---------- command palette (Ctrl+K) ----------
   var paletteActions = [
-    { label: 'Add node', hint: 'N', run: function () { document.getElementById('add-node').click(); } },
+    { label: 'Add agent', hint: 'N · dbl-click canvas', run: function () { document.getElementById('add-node').click(); } },
     { label: 'Add transition', hint: 'E', run: function () { document.getElementById('add-edge').click(); } },
+    { label: 'Select all agents', hint: 'Ctrl+A', run: function () { setSelection(Object.keys(state.graph.nodes)); state.selected = null; } },
+    { label: 'Clear selection', hint: 'Esc', run: function () { select(null); setSelection([]); } },
     { label: 'Save (validate + recompile)', hint: 'Ctrl+S', run: function () { if (!saveBtn.disabled) saveBtn.click(); } },
     { label: 'Undo', hint: 'Ctrl+Z', run: undo },
     { label: 'Redo', hint: 'Ctrl+Y', run: redo },
+    { label: 'Zoom in', hint: '', run: function () { zoomStep(1); } },
+    { label: 'Zoom out', hint: '', run: function () { zoomStep(-1); } },
     { label: 'Fit view', hint: '0', run: fitView },
     { label: 'Reset layout', hint: '', run: function () { document.getElementById('reset-layout').click(); } },
     { label: 'Toggle YAML drawer', hint: '', run: function () { document.getElementById('yaml-toggle').click(); } },
-    { label: 'Toggle inspector', hint: '', run: function () { document.getElementById('inspector-toggle').click(); } },
-    { label: 'kata routing simulator', hint: '', run: openRouteModal },
+    { label: 'Toggle inspector', hint: '', run: function () { document.getElementById('insp-flap').click(); } },
     { label: 'Export SVG', hint: '', run: exportSvg },
     { label: 'Export PNG', hint: '', run: exportPng },
     { label: 'Theme: cycle auto / light / dark', hint: '', run: function () { document.getElementById('theme-toggle').click(); } },
@@ -1932,8 +2417,16 @@ const PAGE_JS = `
     state.config = r.body.config || {};
     state.agents = r.body.agents || [];
     state.yamlText = r.body.yamlText;
+    state.runtime = r.body.runtime || 'claude';
+    state.runtimes = r.body.runtimes || ['claude'];
+    runtimeSel.innerHTML = '';
+    state.runtimes.forEach(function (rt) {
+      var opt = document.createElement('option');
+      opt.value = rt; opt.textContent = rt;
+      if (rt === state.runtime) opt.selected = true;
+      runtimeSel.appendChild(opt);
+    });
     yamlArea.value = r.body.yamlText;
-    document.getElementById('core-path').textContent = r.body.coreDir;
     updateGutter();
     if (r.body.errors && r.body.errors.length) {
       statusEl.textContent = S.invalidGraph;
@@ -1966,33 +2459,57 @@ ${CONTRACT}
 <div class="topbar">
   <div class="brand">
     <h1>rensei <span class="kanji">錬成</span> studio</h1>
-    <span class="path" id="core-path"></span>
   </div>
-  <span class="status" id="status" role="status">${STRINGS.statusLoading}</span>
+  <div class="runtime-wrap" title="${STRINGS.runtimeTitle}">
+    <svg viewBox="0 0 14 14" width="15" height="15" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 1v2.2M7 10.8V13M1 7h2.2M10.8 7H13M3.2 3.2l1.5 1.5M9.3 9.3l1.5 1.5M10.8 3.2L9.3 4.7M4.7 9.3l-1.5 1.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+    <select id="runtime" class="runtime-select"></select>
+  </div>
   <span class="spacer"></span>
-  <button id="add-node">${STRINGS.addNode}</button>
-  <button id="add-edge">${STRINGS.addEdge}</button>
-  <button id="reset-layout" title="${STRINGS.resetLayoutTitle}">${STRINGS.resetLayout}</button>
-  <button id="fit-view">${STRINGS.fitView}</button>
-  <span class="zoom-readout" id="zoom-readout" aria-hidden="true">100%</span>
-  <button id="kata-btn" title="${STRINGS.kataBtnTitle}">${STRINGS.kataBtn}</button>
-  <button id="export-svg" title="${STRINGS.exportSvgTitle}">SVG</button>
-  <button id="export-png" title="${STRINGS.exportPngTitle}">PNG</button>
-  <button id="theme-toggle"></button>
-  <button id="inspector-toggle" title="${STRINGS.inspectorToggleTitle}">${STRINGS.inspectorToggle}</button>
-  <span class="sep"></span>
-  <button id="yaml-toggle">YAML</button>
-  <button id="save-btn" class="primary" title="${STRINGS.saveTitle}">${STRINGS.save}</button>
+  <button id="theme-toggle" class="tbtn icon" title="" aria-label="Theme"></button>
+  <button id="yaml-toggle" class="tbtn mini">YAML</button>
+  <button id="save-btn" class="tbtn primary" title="${STRINGS.saveTitle}">${STRINGS.save}</button>
 </div>
 <div class="main">
+  <aside class="inspector" id="inspector"></aside>
+  <button class="insp-flap" id="insp-flap" title="${STRINGS.inspectorToggleTitle}" aria-label="${STRINGS.inspectorToggleTitle}" aria-expanded="true">
+    <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M9.5 3.5L6 7l3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
   <div class="canvas" id="canvas">
     <div class="canvas-inner" id="canvas-inner"></div>
     <div class="canvas-veil" id="canvas-veil"></div>
+    <div class="marquee" id="marquee"></div>
     <div class="messages" id="messages" aria-live="polite"></div>
     <div class="minimap" id="minimap" title="minimap — click to navigate"></div>
     <div class="hint" id="hint">${STRINGS.hint}</div>
+    <div class="dock" id="dock">
+      <button id="add-node" class="dbtn accent labeled" title="Add a new agent (N) — it is created and wired on save">
+        <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><rect x="1.4" y="3" width="11.2" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 5.4v3.2M5.4 7h3.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+        <span class="lbl">agent</span>
+      </button>
+      <button id="add-edge" class="dbtn labeled" title="Add a transition from the selected agent (E)">
+        <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><circle cx="2.6" cy="7" r="1.4" fill="currentColor"/><path d="M4.6 7h6.2M8.4 4.8L10.6 7l-2.2 2.2" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="lbl">transition</span>
+      </button>
+      <span class="dsep"></span>
+      <button id="zoom-out" class="dbtn icon" title="Zoom out" aria-label="Zoom out">
+        <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><circle cx="6.4" cy="6.4" r="4.6" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M9.8 9.8L12.5 12.5M4.4 6.4h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      </button>
+      <span class="zoom-readout" id="zoom-readout" aria-hidden="true">100%</span>
+      <button id="zoom-in" class="dbtn icon" title="Zoom in" aria-label="Zoom in">
+        <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><circle cx="6.4" cy="6.4" r="4.6" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M9.8 9.8L12.5 12.5M4.4 6.4h4M6.4 4.4v4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      </button>
+      <button id="fit-view" class="dbtn icon" title="Fit the whole graph (0)" aria-label="Fit view">
+        <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M1.5 4V2.5a1 1 0 0 1 1-1H4M10 1.5h1.5a1 1 0 0 1 1 1V4M12.5 10v1.5a1 1 0 0 1-1 1H10M4 12.5H2.5a1 1 0 0 1-1-1V10" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="7" cy="7" r="1.6" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+      <button id="reset-layout" class="dbtn icon" title="${STRINGS.resetLayoutTitle}" aria-label="Reset layout">
+        <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><rect x="1.5" y="1.5" width="4.6" height="4.6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="7.9" y="1.5" width="4.6" height="4.6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="1.5" y="7.9" width="4.6" height="4.6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="7.9" y="7.9" width="4.6" height="4.6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+      <span class="dsep"></span>
+      <button id="export-svg" class="dbtn mini" title="${STRINGS.exportSvgTitle}">SVG</button>
+      <button id="export-png" class="dbtn mini" title="${STRINGS.exportPngTitle}">PNG</button>
+    </div>
+    <span class="status" id="status" role="status">${STRINGS.statusLoading}</span>
   </div>
-  <aside class="inspector" id="inspector"></aside>
 </div>
 <div class="modal-root" id="modal-root"></div>
 <div class="yaml-drawer" id="yaml-drawer">

@@ -6,9 +6,11 @@ const { validate } = require('./lib/validate');
 const { compile, checkDrift, driftWarnings } = require('./lib/compile');
 const { renderDiagram } = require('./lib/diagram');
 const { startStudio } = require('./lib/studio-server');
-const { loadState, saveState, renderStatus, setPhase, logEvent, defaultState } = require('./lib/state');
+const { loadState, saveState, renderStatus, setPhase, logEvent, enterPhase, defaultState } = require('./lib/state');
 const { diffCore, updateCore } = require('./lib/diff');
 const { route, routeTable } = require('./lib/route');
+const { scaffoldAgents } = require('./lib/scaffold');
+const { doctor, doctorReport } = require('./lib/doctor');
 const { write } = require('./lib/util');
 
 const VERSION = require('../package.json').version;
@@ -20,11 +22,11 @@ Usage:
                                                 Install the loop into a project
   npx rensei-kata build [--dir <path>] [--target …]   Recompile agents/commands/docs
   npx rensei-kata validate [--dir <path>] [--json]    Check graph + artifact drift
-  npx rensei-kata doctor [--dir <path>]               Alias for validate
+  npx rensei-kata doctor [--dir <path>] [--json]      Check environment: git, runtimes, SDD tool, entry blocks
   npx rensei-kata graph [--dir <path>]                Regenerate only the HTML diagram
   npx rensei-kata studio [--dir <path>] [--port N]    Visual ⇄ YAML bidirectional editor
   npx rensei-kata status [--dir <path>]               Where the loop is right now
-      status --start "task"      start a loop (enters at the graph entry)
+      status --start "task"      start a loop (also auto-starts on first --set)
       status --set <phase>       record entering a phase (agents do this)
       status --note "…"          append a gate decision / finding
       status --reset             clear the loop state
@@ -71,8 +73,8 @@ function parseFlags(args) {
     else if (!a.startsWith('-')) positional.push(a);
     else { log.err(`unknown flag: ${a}`); process.exit(2); }
   }
-  if (flags.target && !['claude', 'opencode', 'all'].includes(flags.target)) {
-    log.err(`unknown target "${flags.target}" — use claude, opencode or all`);
+  if (flags.target && !['claude', 'opencode', 'codex', 'all'].includes(flags.target)) {
+    log.err(`unknown target "${flags.target}" — use claude, opencode, codex or all`);
     process.exit(2);
   }
   return { flags, positional };
@@ -107,6 +109,20 @@ function runValidate(core, targetDir, { quiet = false, json = false } = {}) {
   return errors.length === 0;
 }
 
+// Detect the runtime this project already uses — artifacts, config files and
+// installed CLIs all count. Explicit --target always wins over detection.
+function detectRuntime(targetDir) {
+  const clues = { claude: 0, opencode: 0 };
+  if (exists(path.join(targetDir, '.claude'))) clues.claude += 2;
+  if (exists(path.join(targetDir, 'CLAUDE.md'))) clues.claude += 1;
+  if (exists(path.join(targetDir, '.opencode'))) clues.opencode += 2;
+  if (exists(path.join(targetDir, 'AGENTS.md'))) clues.opencode += 1;
+  if (exists(path.join(targetDir, 'opencode.json')) || exists(path.join(targetDir, 'opencode.jsonc'))) clues.opencode += 1;
+  if (clues.opencode > clues.claude) return { runtime: 'opencode', reason: 'this project already uses OpenCode' };
+  if (clues.claude > 0 && clues.opencode === 0) return { runtime: 'claude', reason: 'this project already uses Claude Code' };
+  return null; // no signal — stay on the default
+}
+
 function cmdInit(flags, positional) {
   const target = targetDirOf(flags, positional);
   if (!exists(target)) {
@@ -114,6 +130,16 @@ function cmdInit(flags, positional) {
     process.exit(1);
   }
   log.info(`Installing rensei-kata into ${target}${flags.global ? ' (global)' : ''}\n`);
+
+  // 0. target: explicit flag wins; otherwise follow what the project already uses
+  let targetFlag = flags.target;
+  if (!targetFlag) {
+    const detected = detectRuntime(target);
+    if (detected) {
+      targetFlag = detected.runtime;
+      log.info(`detected ${detected.runtime} (${detected.reason}) — compiling for it; override with --target`);
+    }
+  }
 
   // 1. seed .rensei/ from the packaged core (user edits win unless --force)
   const renseiDir = path.join(target, '.rensei');
@@ -126,14 +152,23 @@ function cmdInit(flags, positional) {
     log.err('graph validation failed — fix .rensei/rensei.graph.yaml and run `npx rensei-kata build`');
     process.exit(1);
   }
-  const { written: compiled, claudeMdAction } = compile(core, target, { global: flags.global, target: flags.target || 'claude' });
+  const { written: compiled, claudeMdAction } = compile(core, target, { global: flags.global, target: targetFlag || 'claude' });
   for (const f of compiled) log.ok(path.relative(target, f));
   log.ok(claudeMdAction);
+
+  // environment advice after install — never blocks, just informs
+  const checks = doctor(target, core);
+  const warns = checks.filter(c => c.status !== 'ok');
+  if (warns.length) {
+    log.info('\nEnvironment notes:');
+    for (const c of warns) log.warn(`${c.msg}${c.hint ? ` — ${c.hint}` : ''}`);
+  }
 
   log.info(`
 Done. Next steps:
   1. Open the project in Claude Code (or your editor of choice)
-  2. Try: /kata evalúa este requerimiento — or /rensei for the full loop
+  2. Run a task end-to-end: /rensei login with Google OAuth
+     (or dispatch single requests with /kata)
   3. Watch the loop: npx rensei-kata status
   4. Edit .rensei/rensei.graph.yaml (or npx rensei-kata studio), then: npx rensei-kata build
 `);
@@ -141,13 +176,37 @@ Done. Next steps:
 
 function cmdBuild(flags, positional) {
   const target = targetDirOf(flags, positional);
-  const core = loadCore(findCoreDir(target));
+  let core = loadCore(findCoreDir(target));
   log.info(`Building from ${core.coreDir}\n`);
+
+  // node = agent: scaffold .rensei/agents/<id>/ for every new node first, so
+  // validation and compilation see a complete world (consumes based_on copies)
+  const sc = scaffoldAgents(core.coreDir, core.graph);
+  for (const id of sc.created) {
+    const seed = sc.seededFrom[id] ? ` (seeded from @${sc.seededFrom[id]} — unlinked copy)` : '';
+    log.ok(`agents/${id}/ scaffolded${seed}`);
+  }
+  if (sc.created.length) {
+    const fs = require('fs');
+    fs.writeFileSync(path.join(core.coreDir, 'rensei.graph.yaml'), require('yaml').stringify(core.graph, { indent: 2 }));
+    core = loadCore(findCoreDir(target)); // reload with the new agents
+  }
+
   if (!runValidate(core, target)) process.exit(1);
   const { written, claudeMdAction } = compile(core, target, { global: flags.global, target: flags.target || 'claude' });
   log.info('');
   for (const f of written) log.ok(path.relative(target, f));
   log.ok(claudeMdAction);
+}
+
+function cmdDoctor(flags, positional) {
+  const target = targetDirOf(flags, positional);
+  const core = loadCore(findCoreDir(target));
+  const checks = doctor(target, core);
+  if (flags.json) return console.log(doctorReport(checks, { json: true }));
+  log.info(`\nEnvironment check — ${target}`);
+  console.log(doctorReport(checks));
+  process.exit(checks.some(c => c.status === 'err') ? 1 : 0);
 }
 
 function cmdValidate(flags, positional) {
@@ -186,16 +245,17 @@ function cmdStatus(flags, positional) {
 
   let state = loadState(target);
   if (!state) {
-    if (flags.set && !flags.start) {
-      log.err('no active loop — start one first: npx rensei-kata status --start "task"');
-      process.exit(1);
-    }
+    // auto-start: recording a phase or a note is enough to open the loop —
+    // an explicit --start is welcome but never a gate the user must pass
     state = defaultState();
     state.created_at = new Date().toISOString();
-    state.task = flags.start || '(unnamed)';
-    state.phase = null;
-    logEvent(state, 'start', { note: state.task });
-    log.ok(`loop started: ${state.task}`);
+    if (flags.start) {
+      state.task = flags.start;
+    } else {
+      state.task = flags.set ? `loop (entered at ${flags.set})` : '(unnamed)';
+    }
+    logEvent(state, 'start', { note: flags.start || 'auto-started on first phase record' });
+    log.ok(flags.start ? `loop started: ${state.task}` : `loop auto-started: ${state.task}`);
   } else if (flags.start !== null && flags.start !== '') {
     state.task = flags.start;
     logEvent(state, 'task', { note: flags.start });
@@ -231,11 +291,20 @@ function cmdRoute(flags, positional) {
     log.warn('no trigger matched — kata would fall back to @gate (evaluate first)');
     return;
   }
-  const top = matches[0];
+  const primary = matches.filter(m => !m.on_demand);
+  const alt = matches.filter(m => m.on_demand);
+  if (!primary.length) {
+    log.warn(`no loop agent matched — closest is ${alt.map(m => '@' + m.agent).join(', ')} (on-demand, outside your graph)`);
+    return;
+  }
+  const top = primary[0];
   log.ok(`→ @${top.agent}  (score ${top.score})`);
   for (const h of top.hits) log.info(`    matched (${h.lang}): "${h.trigger}" ×${h.count} — ${h.where}`);
-  for (const m of matches.slice(1)) {
+  for (const m of primary.slice(1)) {
     log.info(`  also @${m.agent} (score ${m.score}): ${m.hits.slice(0, 3).map(h => `"${h.trigger}"`).join(', ')}`);
+  }
+  for (const m of alt) {
+    log.info(`  suggestion @${m.agent} (score ${m.score}) — on-demand, not in your graph`);
   }
   log.info('\n(tie-break rules live in the compiled /kata command — this is the deterministic pre-view)');
 }
@@ -292,8 +361,8 @@ function main(argv) {
   switch (cmd) {
     case 'init': return cmdInit(flags, positional);
     case 'build': return cmdBuild(flags, positional);
-    case 'validate':
-    case 'doctor': return cmdValidate(flags, positional);
+    case 'validate': return cmdValidate(flags, positional);
+    case 'doctor': return cmdDoctor(flags, positional);
     case 'graph': return cmdGraph(flags, positional);
     case 'status': return cmdStatus(flags, positional);
     case 'route': return cmdRoute(flags, positional);

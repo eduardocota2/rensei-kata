@@ -1,0 +1,32 @@
+name: correct
+alias: kata-correct
+description: Fixes review findings one at a time, one commit per fix — critical first, then important, then minor. Re-runs tests after each fix.
+model: routine
+tools: [Read, Write, Edit, Bash]
+standalone: 'kata-correct "corrige X"'
+fragments: [communication]
+skills: []
+triggers:
+  es:
+    - corrige
+    - arregla
+    - aplica los fixes
+    - corrige los hallazgos
+    - bug en
+    - error en
+    - no funciona
+    - se rompe
+    - está roto
+    - patch
+    - hotfix
+  en:
+    - fix
+    - correct
+    - apply the fixes
+    - fix the findings
+    - bug in
+    - error in
+    - not working
+    - broken
+    - patch
+    - hotfix

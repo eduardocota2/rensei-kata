@@ -1,82 +1,74 @@
 # rensei (錬成) — the loop as data.
 # This file is the SINGLE SOURCE OF TRUTH for the workflow.
 # Agents, slash commands, RENSEI.md and the HTML diagram are all compiled from here.
+# MODEL: a node IS an agent — node id = agent name (agents/<id>/ is scaffolded on build).
+# Want two self-critiques? Add two nodes with different names. They stay independent.
 # Edit, then run: npx rensei-kata build
-version: 1
+version: 2
 entry: gate
 
 nodes:
   gate:
-    agent: gate
+    label: GATE
     model: balanced
     effort: fast
-    label: GATE
     summary: Evaluates every request. Decides OpenSpec level + visual design need.
 
-  design:
-    agent: designer
-    model: deep_reasoning
-    effort: deep
+  designer:
     label: DESIGN
     optional: true
     lane: above
+    model: deep_reasoning
+    effort: deep
     summary: Visual design via DESIGN_TOOL, evaluated against DESIGN.md scorecard.
 
   analyze:
-    agent: architect
+    label: ANALYZE
     model: deep_reasoning
     effort: deep
-    label: ANALYZE
     summary: Requirements analysis. Ambiguities resolved before any plan.
 
   plan:
-    agent: architect
+    label: PLAN
     model: balanced
     effort: standard
-    label: PLAN
     summary: Bite-sized TDD tasks with exact paths, ordered setup → core → edge cases.
 
   implement:
-    agent: builder
+    label: IMPLEMENT
     model: routine
     effort: fast
-    label: IMPLEMENT
     summary: Executes the plan with TDD. One commit per task.
 
   self-critique:
-    agent: builder
+    label: SELF-CRITIQUE
     model: deep_reasoning
     effort: deep
-    label: SELF-CRITIQUE
     summary: Builder reviews its OWN code. Must find 2-3+ issues before external review.
 
   spec-review:
-    agent: reviewer
+    label: SPEC-REVIEW
     model: balanced
     effort: standard
-    label: SPEC-REVIEW
     summary: Stage 1 — implementation matches spec EXACTLY. FAIL stops the line.
 
   quality:
-    agent: reviewer
+    label: QUALITY-REVIEW
     model: balanced
     effort: standard
-    label: QUALITY-REVIEW
     summary: Stage 2 — correctness, style, error handling, tests, security, simplicity.
 
   correct:
-    agent: builder
-    model: routine
-    effort: fast
     label: CORRECT
     lane: below
+    model: routine
+    effort: fast
     summary: Fixes review findings, one commit per fix. Loops back to self-critique.
 
   integrate:
-    agent: architect
+    label: INTEGRATE
     model: balanced
     effort: standard
-    label: INTEGRATE
     summary: Full suite green, git clean, OpenSpec validated, PR ready.
 
   done:
@@ -84,9 +76,9 @@ nodes:
     label: DONE
 
 edges:
-  - { from: gate,          to: design,        when: "visual == yes" }
+  - { from: gate,          to: designer,      when: "visual == yes" }
   - { from: gate,          to: analyze,       when: "visual == no" }
-  - { from: design,        to: analyze,       when: "score >= 80% or accepted" }
+  - { from: designer,      to: analyze,       when: "score >= 80% or accepted" }
   - { from: analyze,       to: plan,          when: "all ambiguities resolved" }
   - { from: plan,          to: implement,     when: "plan complete: bite-sized tasks, exact paths" }
   - { from: implement,     to: self-critique, when: "all tasks done, tests pass, commits clean" }
@@ -103,4 +95,4 @@ skip-rules:
   - when: "openspec == skip AND single-file change"
     path: [gate, implement, self-critique, quality, integrate]
   - when: "openspec == skip AND visual == yes"
-    path: [gate, design, implement, self-critique, quality, integrate]
+    path: [gate, designer, implement, self-critique, quality, integrate]

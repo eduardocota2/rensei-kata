@@ -2,6 +2,7 @@
 // The SVG itself comes from graph-render.js (shared with the studio editor).
 const { renderSvg } = require('./graph-render');
 const graphCss = require('./graph-css');
+const exportCss = require('./graph-export-css');
 const { resolveVar } = require('./util');
 
 const CONTRACT = `<!--
@@ -122,8 +123,12 @@ function renderDiagram(core) {
   const EXPORT_JS = `
 (function () {
   function cssForSvg() {
+    // page styles carry the tokens; standalone exports ALSO inline the
+    // concrete values — without them every var(--rk-*) is undefined outside
+    // the page and the SVG renders as a black blob
+    var tokens = ${JSON.stringify(exportCss.AUTO)};
+    var css = tokens + '\\n';
     var sheets = document.querySelectorAll('style');
-    var css = '';
     for (var i = 0; i < sheets.length; i++) css += sheets[i].textContent + '\\n';
     return css;
   }

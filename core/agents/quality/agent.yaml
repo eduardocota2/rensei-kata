@@ -1,0 +1,34 @@
+name: quality
+alias: kata-quality
+description: Stage 2 review — code quality after spec compliance passes. Correctness, style, error handling, tests, security, simplicity. Critical/Important/Minor + verdict.
+model: balanced
+tools: [Read, Bash]
+standalone: 'kata-quality "revisa la calidad de X"'
+fragments: [communication]
+skills: []
+triggers:
+  es:
+    - revisa
+    - revísalo
+    - qué tal está
+    - mira esto
+    - dale un vistazo
+    - está bien esto
+    - revisa este código
+    - haz code review
+    - evalúa la calidad
+    - qué mejorarías
+    - está listo para merge
+    - encuentra problemas
+  en:
+    - review
+    - check this
+    - look at this
+    - is this good
+    - give it a look
+    - review this code
+    - do a code review
+    - evaluate quality
+    - what would you improve
+    - ready to merge
+    - find problems

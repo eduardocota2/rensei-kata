@@ -3,6 +3,7 @@
 // the --rk-* properties for its light/dark themes.
 module.exports = `
 .rk-graph { display: block; }
+.rk-graph .bg { fill: var(--rk-ground, #f4f5f7); }
 .rk-graph .grid-dot { fill: var(--rk-grid, var(--rk-node-border)); opacity: .8; }
 .rk-graph .arrow-fill { fill: var(--rk-edge); }
 .rk-graph .arrow-fill-back { fill: var(--rk-back); }
@@ -77,14 +78,18 @@ module.exports = `
 .rk-graph .edge.back { stroke: var(--rk-back); stroke-width: 2; stroke-dasharray: 7 4; }
 .rk-graph .edge.skip { stroke: var(--rk-skip); stroke-width: 1.75; stroke-dasharray: 2.5 3.5; }
 
-/* gate-condition pills — floating annotation, never a click target */
+/* gate-condition pills — colored by the edge they annotate; a dotted leader
+   ties each pill to its own arrow so ownership reads at a glance */
 .rk-graph .label-pill { pointer-events: none; }
-.rk-graph .label-pill rect { fill: var(--rk-pill-bg); stroke: var(--rk-pill-border); stroke-width: 1; }
-.rk-graph .label-pill text { font-size: 10px; fill: var(--rk-pill-ink); font-variant-numeric: tabular-nums; }
+.rk-graph .label-pill rect { fill: var(--rk-pill-bg); stroke: var(--rk-edge); stroke-width: 1; }
+.rk-graph .label-pill text { font-size: 10px; fill: var(--rk-edge); font-weight: 550; font-variant-numeric: tabular-nums; }
+.rk-graph .label-pill .label-lead { stroke: var(--rk-edge); stroke-width: 1; stroke-dasharray: 2 2; opacity: .8; }
 .rk-graph .label-pill.back rect { fill: var(--rk-back-soft); stroke: var(--rk-back); }
 .rk-graph .label-pill.back text { fill: var(--rk-back); font-weight: 600; }
+.rk-graph .label-pill.back .label-lead { stroke: var(--rk-back); }
 .rk-graph .label-pill.skip rect { fill: var(--rk-skip-soft); stroke: var(--rk-skip); }
 .rk-graph .label-pill.skip text { fill: var(--rk-skip); }
+.rk-graph .label-pill.skip .label-lead { stroke: var(--rk-skip); }
 
 /* studio interactivity */
 .rk-graph .hit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; }

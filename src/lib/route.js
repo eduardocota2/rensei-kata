@@ -24,7 +24,20 @@ function route(core, text) {
   const hay = normalize(text);
   if (!hay) return { text, matches: [] };
 
+  // The graph is the source of truth: kata routes within the USER's workflow.
+  // Agents in agents/ but not in the graph are at most a suggestion (on_demand
+  // helpers like @sentinel) — never the primary answer.
+  const inGraph = new Set();
+  for (const [id, node] of Object.entries(core.graph.nodes || {})) {
+    if (!node.terminal) inGraph.add(id);
+  }
+  const onDemand = new Set();
+  for (const [name, { def }] of core.agents) {
+    if (def && def.on_demand) onDemand.add(name);
+  }
+
   const results = [];
+  const suggestions = [];
   for (const [name, { def }] of core.agents) {
     let score = 0;
     const hits = [];
@@ -36,11 +49,15 @@ function route(core, text) {
         hits.push({ trigger: t.trigger, lang: t.lang, where: t.where, count: n });
       }
     }
-    if (score > 0) results.push({ agent: name, score, hits });
+    if (score > 0) {
+      if (inGraph.has(name)) results.push({ agent: name, score, hits });
+      else suggestions.push({ agent: name, score, hits, on_demand: onDemand.has(name) });
+    }
   }
 
   results.sort((a, b) => b.score - a.score || a.agent.localeCompare(b.agent));
-  return { text, matches: results.slice(0, 6) };
+  suggestions.sort((a, b) => b.score - a.score || a.agent.localeCompare(b.agent));
+  return { text, matches: results.slice(0, 6).concat(suggestions.slice(0, 2)) };
 }
 
 function routeTable(core) {

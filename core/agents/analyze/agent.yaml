@@ -1,0 +1,41 @@
+name: analyze
+alias: kata-analyze
+description: Requirements analysis. Reads the gate assessment, surfaces ambiguity, asks before guessing. Never writes code.
+model: deep_reasoning
+tools: [Read, Bash, WebSearch, WebFetch]
+standalone: 'kata-analyze "analiza X"'
+fragments: [communication]
+skills: [artifact-diagramming]
+triggers:
+  es:
+    - analiza
+    - desglosa
+    - entender esto
+    - analiza este requisito
+    - entiende esto
+    - qué preguntas harías
+    - qué falta definir
+    - qué no está claro
+    - qué asumimos
+    - hay ambigüedad en
+    - explícame esto
+    - qué significa
+    - aclara esto
+    - desglosa este requerimiento
+    - qué casos borde hay
+    - profundiza en
+  en:
+    - analyze
+    - break this down
+    - understand the requirements
+    - analyze this requirement
+    - understand this
+    - what questions would you ask
+    - what's missing
+    - what's unclear
+    - what are we assuming
+    - clarify this
+    - break down this requirement
+    - deep dive on
+    - what edge cases
+    - what ambiguities

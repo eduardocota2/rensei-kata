@@ -71,6 +71,38 @@ function collectTriggers(agentName, def) {
   return out;
 }
 
+// Tier tables may be flat (all runtimes) or nested per runtime
+// (MODELS: { claude: {...}, codex: {...} }). This flattens for validation:
+// a tier is valid if it exists in ANY runtime.
+function tierTable(config, tier) {
+  const raw = tier === 'model' ? config.MODELS : config.EFFORT;
+  if (!raw || typeof raw !== 'object') return raw;
+  const values = Object.values(raw);
+  const nested = values.every(v => v && typeof v === 'object');
+  if (!nested) return raw; // flat
+  const flat = {};
+  for (const rt of values) Object.assign(flat, rt);
+  return flat;
+}
+
+// Runtime-aware table for UI/compile: models for ONE runtime (flat fallback).
+function tierTableFor(config, tier, runtime) {
+  const raw = tier === 'model' ? config.MODELS : config.EFFORT;
+  if (!raw || typeof raw !== 'object') return raw;
+  const values = Object.values(raw);
+  const nested = values.every(v => v && typeof v === 'object');
+  if (!nested) return raw;
+  return raw[runtime] || raw.claude || values[0] || {};
+}
+
+function runtimesOf(config) {
+  const raw = config.MODELS;
+  if (!raw || typeof raw !== 'object') return ['claude'];
+  const values = Object.values(raw);
+  const nested = values.every(v => v && typeof v === 'object');
+  return nested ? Object.keys(raw) : ['claude'];
+}
+
 function validate(core) {
   const { graph, config, agents } = core;
   const errors = [];
@@ -98,16 +130,17 @@ function validate(core) {
   // -- nodes ---------------------------------------------------------------
   for (const [name, node] of Object.entries(graph.nodes || {})) {
     if (node.terminal) continue;
-    if (!node.agent) {
-      pushError(`node "${name}" has no agent and is not terminal`, { node: name },
-        'add agent: <id>, or mark it terminal: true');
-    } else if (!agents.has(node.agent)) {
-      pushError(`node "${name}" references unknown agent "${node.agent}" (no core/agents/${node.agent}/)`, { node: name },
-        `create .rensei/agents/${node.agent}/agent.yaml or point the node at an existing agent`);
+    if (node.agent !== undefined && node.agent !== name) {
+      pushError(`node "${name}" references agent "${node.agent}" — under the node=agent model every phase IS its own agent (drop the "agent:" key; it is derived from the node id)`, { node: name },
+        `remove \`agent: ${node.agent}\` from node "${name}" — the agent name is the node id`);
+    }
+    if (!agents.has(name)) {
+      pushError(`node "${name}" has no agent — agents/${name}/ will be scaffolded automatically on save/build`, { node: name },
+        'run `npx rensei-kata build` (or save from the studio) to scaffold agents/<id>/');
     }
     for (const tier of ['model', 'effort']) {
       if (!node[tier]) continue;
-      const table = tier === 'model' ? config.MODELS : config.EFFORT;
+      const table = tierTable(config, tier);
       if (table && !(node[tier] in table)) {
         pushError(`node "${name}" uses unknown ${tier} tier "${node[tier]}" (not in rensei.config.yaml ${tier.toUpperCase()})`, { node: name },
           `use one of: ${Object.keys(table).join(', ')}`);
@@ -216,11 +249,11 @@ function validate(core) {
   // -- agents that no graph node uses ---------------------------------------
   for (const [name, { def }] of agents) {
     if (def.on_demand) continue;
-    const used = nodeNames.some(n => graph.nodes[n].agent === name);
+    const used = nodeNames.includes(name);
     if (!used) pushWarning(`agent "${name}" is not referenced by any graph node (standalone-only? mark on_demand: true if intentional)`);
   }
 
   return { errors, warnings, issues };
 }
 
-module.exports = { validate, stronglyConnectedComponents, collectTriggers };
+module.exports = { validate, stronglyConnectedComponents, collectTriggers, tierTable, tierTableFor, runtimesOf };

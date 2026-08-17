@@ -8,6 +8,15 @@ const { read, write, exists } = require('./util');
 
 const STATE_FILE = 'state.json';
 
+// $ITERATIONS.x resolution for max: bounds (config lives in the core object
+// when renderStatus is called with it)
+function resolveMax(v, config) {
+  if (typeof v !== 'string' || !v.startsWith('$')) return v;
+  let obj = config;
+  for (const part of v.slice(1).split('.')) obj = obj == null ? undefined : obj[part];
+  return obj === undefined ? v : obj;
+}
+
 function statePath(targetDir) {
   return path.join(targetDir, '.rensei', STATE_FILE);
 }
@@ -63,6 +72,23 @@ function setPhase(state, graph, phase, note) {
 }
 
 // Human-readable status: where the loop is, what got it here, what can follow.
+// Record entering a phase; auto-starts the loop if none exists — an explicit
+// --start is welcome but never required.
+function enterPhase(targetDir, graph, phase, note) {
+  let state = loadState(targetDir);
+  const fresh = !state;
+  if (fresh || state.corrupt) {
+    state = defaultState();
+    state.created_at = new Date().toISOString();
+    state.task = `loop (entered at ${phase})`;
+    logEvent(state, 'start', { note: 'auto-started on first phase record' });
+  }
+  const r = setPhase(state, graph, phase, note);
+  if (!r.ok) return { ...r, state };
+  saveState(targetDir, state);
+  return { ok: true, state, autoStarted: fresh };
+}
+
 function renderStatus(targetDir, core) {
   const state = loadState(targetDir);
   const { graph, config } = core;
@@ -79,7 +105,7 @@ function renderStatus(targetDir, core) {
   if (node) {
     const model = (config.MODELS && config.MODELS[node.model]) || node.model || '—';
     const effort = (config.EFFORT && config.EFFORT[node.effort]) || node.effort || '—';
-    L.push(`phase:   ${node.label || state.phase}  (@${node.agent || '?'}, ${model}, effort ${effort})`);
+    L.push(`phase:   ${node.label || state.phase}  (@${state.phase}, ${model}, effort ${effort})`);
   } else {
     L.push('phase:   — (not started)');
   }
@@ -93,10 +119,12 @@ function renderStatus(targetDir, core) {
   const next = (graph.edges || []).filter(e => e.from === state.phase);
   if (next.length) {
     L.push('');
-    L.push('next transitions:');
+    L.push('next:');
     for (const e of next) {
-      const max = e.max !== undefined ? ` (max ${e.max}×)` : '';
-      L.push(`  → ${e.to}${e.when ? `  when: ${e.when}` : ''}${max}`);
+      const bounded = e.max !== undefined;
+      const taken = state.iterations[`${e.from}>${e.to}`] || 0;
+      const cap = bounded ? ` — ${taken}/${resolveMax(e.max, config)} used` : '';
+      L.push(`  → ${e.to}  when: ${e.when || 'always'}${cap}${bounded && taken >= resolveMax(e.max, config) ? '  ⚠ BOUND REACHED — surface it, do not loop again' : ''}`);
     }
   }
 
@@ -115,4 +143,4 @@ function renderStatus(targetDir, core) {
   return { active: true, text: L.join('\n'), state };
 }
 
-module.exports = { loadState, saveState, renderStatus, setPhase, logEvent, defaultState, statePath };
+module.exports = { loadState, saveState, renderStatus, setPhase, logEvent, enterPhase, defaultState, statePath };

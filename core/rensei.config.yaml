@@ -1,20 +1,55 @@
-# rensei configuration — tiers, effort, iterations, tools.
+# rensei configuration — runtimes, tiers, effort, iterations, tools.
 # Referenced from rensei.graph.yaml and agent definitions as {{MODELS.x}}, {{EFFORT.x}}, $ITERATIONS.x
-MODELS:
-  deep_reasoning: opus          # gate decisions, analyze, self-critique, security, design
-  balanced: sonnet              # planning, reviews, integration (DEFAULT)
-  routine: haiku                # implementation, fixes, CRUD, docs
 
+# Which runtime this environment compiles for: claude | codex | opencode
+# (the studio shows a selector; build --target overrides it)
+RUNTIME: claude
+
+# Model tiers PER RUNTIME — the same graph compiles with the right models
+# wherever it runs. A flat MODELS: {tier: model} still works (applies to all).
+# Tiers are semantic — swap the concrete models as new versions ship.
+MODELS:
+  # Anthropic — current line: Fable 5 (flagship) > Opus 5 > Sonnet 5 > Haiku 4.5
+  claude:
+    deep_reasoning: claude-fable-5    # next-gen intelligence, 1M context, long-running agents
+    reasoning: claude-opus-5          # complex agentic coding, enterprise work
+    balanced: claude-sonnet-5         # best speed/intelligence mix (DEFAULT)
+    routine: claude-haiku-4-5         # fastest with near-frontier intelligence
+    micro: claude-haiku-4-5           # cheapest available tier
+  # OpenAI / Codex — current line: GPT-5.6 family + coding-tuned 5.1 Codex
+  codex:
+    deep_reasoning: gpt-5.6-sol       # frontier reasoning/coding
+    reasoning: gpt-5.6-terra          # intelligence/cost balance
+    balanced: gpt-5.1-codex           # coding-tuned workhorse (DEFAULT)
+    routine: gpt-5.6-luna             # cost-sensitive high-volume
+    micro: gpt-5-nano
+  # OpenCode is provider-agnostic (75+ providers) — a mixed-vendor ladder of
+  # current coding models (Kimi K3, DeepSeek V4, GLM, Minimax, Gemini).
+  # Swap freely; these are only defaults.
+  opencode:
+    deep_reasoning: kimi-k3                     # 1M context, long-horizon coding
+    reasoning: deepseek-v4-pro
+    balanced: glm-4.6                           # (DEFAULT) alternatives: minimax-m2.1, gemini-3-pro
+    routine: kimi-k2.7-code-highspeed           # fast coding output
+    micro: deepseek-v4-flash
+
+# Effort levels per runtime (same shape as MODELS; flat = all runtimes)
 EFFORT:
   deep: max
   standard: medium
   fast: low
+  minimal: minimal
   default: medium
 
 ITERATIONS:
   correction_loop: 3            # max times correct → self-critique → re-review
   design_variants: 3            # max design variants per screen
   review_retries: 2             # max re-review cycles
+
+# Loop behavior knobs — interpolated into the compiled agent prompts.
+BEHAVIOR:
+  ask_before_commit: true       # @implement/@correct ask "Ready to commit?" per task;
+                                # false = commit directly with the same message format
 
 SDD_TOOL: openspec
 DESIGN_TOOL: stitch-mcp
