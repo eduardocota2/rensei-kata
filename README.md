@@ -126,6 +126,22 @@ There is no agent roster to choose from: adding a node to the graph **creates th
 - **Duplicate** (Ctrl+D) seeds the new agent as a copy of the source — same config and prompt, but **unlinked**: editing either never touches the other.
 - The agent's identity is its **name** (the label). The id is its slug, derived and hidden. Two agents cannot share a name — that's how instances differentiate.
 
+### Deactivated, not deleted: the agent shelf
+
+Removing a node from the graph **deactivates** its agent — nothing is destroyed:
+
+- compiled artifacts are purged from the runtime (it stops running, routing and existing)
+- the source directory (prompt, config, skills) stays intact, waiting
+- the studio's inspector shows a **Deactivated** section with every shelved agent: reactivate (drops the node back on the canvas, brain restored on save) or delete forever (two-step confirm, removes `agents/<id>/`)
+
+Agent states, in one line each:
+
+| State | Lives in | Runs? |
+|-------|----------|-------|
+| **active** | a graph node | yes — as a loop phase |
+| **on-demand** (`on_demand: true`) | no node, but available | when invoked (`@sentinel`) |
+| **deactivated** (the shelf) | no node, dir kept | never, until reactivated |
+
 ## How it works
 
 `.rensei/rensei.graph.yaml` is the **single source of truth**. Everything else is generated:
@@ -288,7 +304,7 @@ The studio is the **workflow configurator**: what you edit here is what rensei a
 - The agent's **name** is its identity; model/effort dropdowns adapt to the selected **runtime** (claude · codex · opencode).
 - **As YAML** — a synced pane; a **line-diff preview** shows exactly what will change before it hits the canvas.
 - Every save **validates first**, writes `rensei.graph.yaml`, scaffolds new agents, and **recompiles everything** — the change reaches the agents immediately. Validation errors are **anchored to the offending node/edge** on the canvas.
-- **Ctrl+K** command palette, **minimap**, **kata** routing simulator, **SVG/PNG** export.
+- **Ctrl+K** command palette, **minimap**, **SVG/PNG** export, **agent shelf** (deactivated agents: reactivate or delete forever).
 
 ## Targets: Claude Code, OpenCode, or both
 
