@@ -21,6 +21,10 @@ npx rensei-kata init        # install the loop into your project
 /kata corrige el bug del login      ← dispatch a single request
 ```
 
+![A real /rensei run: phases advance through gates, the correction loop consumes one of its three bounds, and `rensei-kata status` shows exactly where the loop is](docs/assets/run-example.png)
+
+*A real `/rensei` run — each phase is an agent, each transition is a gate, and `status` always knows where the loop is (and how many retries are left).*
+
 ---
 
 ## Table of contents
@@ -43,6 +47,10 @@ npx rensei-kata init        # install the loop into your project
 ## Why
 
 AI coding agents are powerful but undisciplined: they skip planning, self-congratulate instead of self-critique, and drift from the spec. Frameworks that fix this usually do it in **prose** — long prompts that can't be checked, visualized, or executed.
+
+![The same task without rensei (one long chat: no plan, no tests, spec drift found in prod) vs with rensei (phases with gates: analyze asks first, self-critique catches issues, spec-review verifies drift)](docs/assets/with-vs-without.png)
+
+*The same task, two ways. Left: what one long chat gets you. Right: what a gated loop gets you.*
 
 rensei-kata treats the workflow as **data**:
 
@@ -101,11 +109,11 @@ Every phase is compiled from the graph with exactly four assignments:
 ```bash
 $ npx rensei-kata status
 task:    add password reset with email tokens
-phase:   QUALITY-REVIEW  (@quality, claude-sonnet-5, effort medium)
-loops:   quality>correct ×2
+phase:   QUALITY-REVIEW  (@quality, balanced, effort medium)
+loops:   quality>correct ×1
 
 next:
-  → correct   when: issues found — 2/3 used
+  → correct   when: issues found — 1/3 used
   → integrate when: approved
 ```
 
@@ -127,6 +135,10 @@ npx rensei-kata studio        # → http://localhost:4789
 
 The studio is the **workflow configurator**: what you edit here is what rensei and kata become.
 
+![The rensei studio: the whole loop as an interactive graph — nodes are agents, arrows are gated transitions, the correction loop is visible as a dashed back-edge](docs/assets/studio-canvas.png)
+
+*The whole loop as an interactive graph — the dashed back-edge is the bounded correction loop (`max 3×`).*
+
 | Surface | What it does |
 |---------|--------------|
 | **Canvas** | Infinite, pannable (drag) — nodes are agents, arrows are gated transitions; alignment guides, minimap, zoom, marquee multi-select (Shift+drag) |
@@ -135,6 +147,18 @@ The studio is the **workflow configurator**: what you edit here is what rensei a
 | **Topbar** | brand · runtime selector (claude · codex · opencode, theme-aware) · theme · YAML drawer · Save |
 | **YAML drawer** | Synced source view; edits apply with a line-diff preview |
 | **Palette** (Ctrl+K) | Every action, keyboard-first |
+
+![Editing an agent in the inspector: name, model tier per runtime, effort, lane, flags, and a non-destructive deactivate that sends it to the shelf](docs/assets/studio-inspector.png)
+
+*Every node IS an agent — select one and tune its model tier, effort, lane and flags. Deactivation is non-destructive: the agent waits on the shelf.*
+
+![The prompt tab: the agent's brain as live markdown — edit it, save, and the next build recompiles every runtime artifact](docs/assets/studio-prompt.png)
+
+*The prompt tab edits the agent's brain in place — the next Save recompiles it into every runtime artifact.*
+
+![The YAML drawer: the source of truth as text, mirrored with the canvas in both directions](docs/assets/studio-yaml.png)
+
+*Canvas ⇄ YAML, always in sync — the graph is data, so both views edit the same truth.*
 
 Every save **validates first** — invalid graphs never touch disk, and errors are anchored to the offending node on the canvas (red border + tooltip; the toast jumps to it). Saving scaffolds new agents, recompiles everything, and reports what changed.
 

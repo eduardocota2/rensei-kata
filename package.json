@@ -5,6 +5,11 @@
   "keywords": ["claude-code", "agents", "workflow", "ai-engineering", "opencode", "codex", "methodology"],
   "license": "MIT",
   "type": "commonjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/eduardocota2/rensei-kata.git"
+  },
+  "homepage": "https://github.com/eduardocota2/rensei-kata#readme",
   "bin": {
     "rensei-kata": "bin/rensei-kata.js"
   },
