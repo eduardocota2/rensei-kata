@@ -1,14 +1,24 @@
 # rensei-kata
 
-**rensei (錬成) + kata (型)** — a graph-driven AI engineering loop for Claude Code and OpenCode.
+**A graph-driven AI engineering loop for Claude Code, OpenCode, and Codex** — your workflow as data: one YAML graph compiles into agents, slash commands, docs, a live diagram, and a runner that executes it.
 
-> **rensei** is the methodology: refinement through repetition — forge, temper, correct, repeat until the result is excellent.
-> **kata** is the dispatcher: it reads your request (Spanish or English) and routes it to the right agent — you never need to memorize the agent roster.
+```
+gate → [design] → analyze → plan → implement → self-critique → spec-review → quality → correct → integrate → done
+                        ↑____________________ correction loop (max 3×) ____________________↑
+```
 
-One **single source of truth** — a YAML graph — compiles into agents, slash commands, methodology docs and a live diagram. Edit the graph, run `build`, and every agent reflects the change immediately.
+> **rensei (錬成)** is the methodology — refinement through repetition: forge, temper, correct, repeat until the result is excellent.
+> **kata (型)** is the dispatcher — it reads your request (Spanish or English) and routes it to the right agent.
 
 ```bash
 npx rensei-kata init        # install the loop into your project
+```
+
+**Then, in your AI session:**
+
+```
+/rensei login with Google OAuth     ← the loop runs itself: phases, gates, bounds
+/kata corrige el bug del login      ← dispatch a single request
 ```
 
 ---
@@ -16,282 +26,100 @@ npx rensei-kata init        # install the loop into your project
 ## Table of contents
 
 - [Why](#why)
-- [Installation](#installation)
 - [Quickstart](#quickstart)
 - [The loop](#the-loop)
-- [How it works](#how-it-works)
-- [The agents](#the-agents)
+- [A node IS an agent](#a-node-is-an-agent)
+- [The studio](#the-studio)
 - [CLI reference](#cli-reference)
-  - [`status` — observe the loop](#status--observe-the-loop)
-  - [`route` — test routing for free](#route--test-routing-for-free)
-  - [`diff` / `update` — stay current](#diff--update--stay-current)
-  - [`validate` — graph health + drift](#validate--graph-health--drift)
-  - [`studio` — visual ⇄ YAML editor](#studio--visual--yaml-editor)
-- [Targets: Claude Code, OpenCode, or both](#targets-claude-code-opencode-or-both)
-- [Skills — optional and configurable](#skills--optional-and-configurable)
-- [Guarantees the validator enforces](#guarantees-the-validator-enforces)
-- [Repo layout](#repo-layout)
+- [Runtimes](#runtimes)
+- [Configuration](#configuration)
+- [Guarantees](#guarantees)
 - [FAQ](#faq)
+- [Repo layout](#repo-layout)
 - [License](#license)
 
 ---
 
 ## Why
 
-AI coding agents are powerful but undisciplined: they skip planning, self-congratulate instead of self-critique, and drift from the spec. Frameworks that fix this usually do it in **prose** — long prompts that can't be checked, visualized or executed.
+AI coding agents are powerful but undisciplined: they skip planning, self-congratulate instead of self-critique, and drift from the spec. Frameworks that fix this usually do it in **prose** — long prompts that can't be checked, visualized, or executed.
 
 rensei-kata treats the workflow as **data**:
 
 ```
-rensei.graph.yaml  →  compile  →  agents, slash commands, docs, diagram, RUNNER
+.rensei/rensei.graph.yaml  →  npx rensei-kata build  →  agents, commands, docs, diagram, runner
 ```
 
-Because the loop is a graph, you can **validate it** (no infinite loops, no orphan phases), **visualize it**, **run it** (`/rensei` compiles the graph into an execution protocol), **observe it** (live phase tracking with loop bounds), **translate it** to any runtime, and **edit it** visually — none of which is possible with a 3,000-line prompt.
-
-## Installation
-
-**Requirements:** Node.js ≥ 18. No global install needed.
-
-```bash
-# in your project root
-npx rensei-kata init
-```
-
-The runtime is **auto-detected**: a project with `.opencode/` or `opencode.json` compiles for OpenCode, one with `.claude/`/`CLAUDE.md` compiles for Claude Code. `--target` overrides.
-
-That's it. `init` seeds a `.rensei/` directory into the project, validates the graph, and compiles the first batch of artifacts (`.claude/agents/`, `.claude/commands/`, `RENSEI.md`, `graph.html`).
-
-Useful variants:
-
-```bash
-npx rensei-kata init --target opencode    # compile for OpenCode instead of Claude Code
-npx rensei-kata init --target all         # both runtimes from the same graph
-npx rensei-kata init --global             # install into ~ (all your projects)
-npx rensei-kata init --force              # overwrite existing .rensei/ files
-```
-
-> After `init`, `.rensei/` is **yours**. The packaged core is only the default starting point.
+Because the loop is a graph you can **validate it** (no infinite loops, no orphan phases), **visualize it** (studio + exported diagram), **run it** (`/rensei` compiles the graph into an execution protocol), **observe it** (live phase tracking with loop bounds), **translate it** to your runtime, and **edit it visually** — none of which is possible with a 3,000-line prompt.
 
 ## Quickstart
 
+**Requirements:** Node.js ≥ 18.
+
 ```bash
-npx rensei-kata init                      # 1. install
-
-# 2. open the project in Claude Code (or OpenCode) and run a task end-to-end:
-#    /rensei login with Google OAuth      ← the loop runs itself: entry → phases → gates
-#    /kata <request>                      ← or dispatch single requests
-
-npx rensei-kata status                    # 3. watch the loop as it advances
-npx rensei-kata studio                    # 4. tweak the graph visually
-npx rensei-kata build                     # 5. recompile agents after edits
+# 1. in your project root
+npx rensei-kata init
 ```
 
-In-session commands:
+`init` seeds `.rensei/`, validates the graph, compiles the first batch of artifacts, and runs an **environment doctor** as silent advice (git, runtime CLI, SDD tool, entry blocks). The runtime is **auto-detected** — a project with `.opencode/` or `opencode.json` compiles for OpenCode, one with `.codex/` for Codex, one with `.claude/` or `CLAUDE.md` for Claude Code; `--target` overrides.
 
-```
-/rensei <task>        RUN the loop: the compiled command turns the graph into an
-                      execution protocol — phase by phase, gates honored, state
-                      recorded. One command, full cycle.
-/kata <request>       dispatch to the right agent (ES or EN)
-@gate @designer @analyze @plan @implement @self-critique @spec-review @quality @correct @integrate @sentinel    direct invocation
-```
+```bash
+# 2. open the project in your runtime and run a task end-to-end
+/rensei add password reset with email tokens
 
-`/rensei` is **compiled from your graph**: every `advance:`/`loop:` line comes
-from an edge, every condition from its `when:`, every bound from its `max:`.
-Edit the graph, rebuild, and the runner changes with it — including agents you
-created in the studio.
+# 3. watch the loop advance (agents record it themselves)
+npx rensei-kata status
+
+# 4. customize the workflow visually
+npx rensei-kata studio
+```
 
 ## The loop
 
 ```
-gate → [design] → analyze → plan → implement → self-critique → spec-review → quality-review → correct → integrate → done
-                        ↑_____________________ correction loop (max 3×) _____________________↑
+gate → [design] → analyze → plan → implement → self-critique → spec-review → quality → correct → integrate → done
+                        ↑____________________ correction loop (max 3×) ____________________↑
 ```
 
-Every phase has exactly four things assigned, all from the graph:
+Every phase is compiled from the graph with exactly four assignments:
 
 | | |
 |---|---|
-| **An agent** | **a node IS an agent** — one agent per phase, named by the node (`agents/<node-id>/`) |
-| **A model tier** | deep_reasoning · balanced · routine — **per runtime** (Claude, Codex, OpenCode) |
-| **An effort level** | deep · standard · fast |
-| **A quality gate** | the condition to enter the next phase (`tests pass`, `2-3+ issues found`…) |
+| **An agent** | a node IS an agent — one agent per phase, named by the node |
+| **A model tier** | `deep_reasoning · reasoning · balanced · routine · micro` — per runtime |
+| **An effort level** | `deep · standard · fast · minimal` |
+| **A quality gate** | the condition to enter the next phase, with loop bounds (`max:`) |
 
-The gate agent evaluates every request first: complexity level (OpenSpec), visual-design need, and whether the path can be shortened for trivial work (declarative skip-rules, also in the graph).
+**`/rensei` is the runner.** It's compiled from *your* graph — every `advance:` line from an edge, every condition from its `when:`, every bound from its `max:`. Edit the graph, rebuild, and the runner changes with it.
 
-### A node IS an agent
+**`/kata` is the dispatcher.** For single requests instead of full loops; Spanish or English, no roster knowledge needed.
 
-There is no agent roster to choose from: adding a node to the graph **creates the agent**. On save/build, `agents/<node-id>/` is scaffolded (definition + prompt), and the compiler wires it into everything — kata's routing, RENSEI.md, the runtime artifacts. Want two self-critiques? Add two nodes with different names; they stay independent.
+**Phases end with contracts.** Every phase emits a structured output block (`GATE DECISION`, `ANALYSIS`, `PLAN`, `IMPLEMENTED`, `SELF-CRITIQUE`, `SPEC REVIEW`, `QUALITY REVIEW`, `CORRECTED`, `INTEGRATION SUMMARY`) — the next phase receives structure, not prose.
 
-- **Duplicate** (Ctrl+D) seeds the new agent as a copy of the source — same config and prompt, but **unlinked**: editing either never touches the other.
-- The agent's identity is its **name** (the label). The id is its slug, derived and hidden. Two agents cannot share a name — that's how instances differentiate.
-
-### Deactivated, not deleted: the agent shelf
-
-Removing a node from the graph **deactivates** its agent — nothing is destroyed:
-
-- compiled artifacts are purged from the runtime (it stops running, routing and existing)
-- the source directory (prompt, config, skills) stays intact, waiting
-- the studio's inspector shows a **Deactivated** section with every shelved agent: reactivate (drops the node back on the canvas, brain restored on save) or delete forever (two-step confirm, removes `agents/<id>/`)
-
-Agent states, in one line each:
-
-| State | Lives in | Runs? |
-|-------|----------|-------|
-| **active** | a graph node | yes — as a loop phase |
-| **on-demand** (`on_demand: true`) | no node, but available | when invoked (`@sentinel`) |
-| **deactivated** (the shelf) | no node, dir kept | never, until reactivated |
-
-## How it works
-
-`.rensei/rensei.graph.yaml` is the **single source of truth**. Everything else is generated:
-
-```
-.rensei/
-├── rensei.graph.yaml      ← EDIT THIS: nodes, edges, gates, iteration bounds
-├── rensei.config.yaml     ← model tiers, effort levels, iteration limits, skills registry
-├── agents/<name>/         ← agent.yaml (model, tools, triggers ES/EN) + prompt.md
-├── fragments/             ← shared protocols (self-critique, communication)
-├── rules/                 ← always-on engineering rules
-├── reference/             ← decision framework, model routing guide
-├── prompts/               ← tool-agnostic prompt templates (any runtime, CI included)
-├── RENSEI.md              ← GENERATED methodology doc (imported by CLAUDE.md / AGENTS.md)
-├── graph.html             ← GENERATED loop diagram (SVG/PNG export built in)
-├── build-manifest.json    ← GENERATED hashes — powers drift detection
-└── state.json             ← live loop state — powers `status`
-```
-
-Edit anything under `.rensei/` (YAML by hand, or visually in the studio), then:
-
-```bash
-npx rensei-kata build       # recompile agents, commands, RENSEI.md, graph.html
-```
-
-Invalid graphs **never touch disk** — the build refuses to run until validation passes.
-
-### The graph, in one glance
-
-```yaml
-nodes:
-  gate:    { label: GATE,    model: balanced,       effort: fast }
-  design:  { label: DESIGN,  model: deep_reasoning, effort: deep }   # agent "design" is scaffolded automatically
-  analyze: { label: ANALYZE, model: deep_reasoning, effort: deep }
-  # …
-edges:
-  - { from: gate,    to: design,  when: "visual == yes" }
-  - { from: gate,    to: analyze, when: "visual == no" }
-  - { from: quality, to: correct, when: "issues found", max: "$ITERATIONS.correction_loop" }
-```
-
-Node = agent (id = the scaffolded `agents/<id>/`). Edge = transition (gate condition, loop bound). That's the whole model.
-
-## The agents
-
-Every loop phase is its own agent (one node = one agent). `@sentinel` is on-demand, outside the loop.
-
-| Agent | Phase | Tier (claude) |
-|-------|-------|---------------|
-| **@gate** | Evaluates every request first: OpenSpec level + visual design need | balanced |
-| **@designer** | Visual design via Stitch MCP, scored against DESIGN.md | deep_reasoning |
-| **@analyze** | Requirements analysis — ambiguity resolved before any plan | deep_reasoning |
-| **@plan** | Bite-sized TDD tasks with exact paths | balanced |
-| **@implement** | Executes the plan with TDD, one commit per task | routine |
-| **@self-critique** | The author reviews its OWN work — must find 2-3+ issues | deep_reasoning |
-| **@spec-review** | Stage 1 — matches spec EXACTLY; FAIL stops the line | balanced |
-| **@quality** | Stage 2 — correctness, style, security, simplicity | balanced |
-| **@correct** | Fixes review findings, one commit per fix | routine |
-| **@integrate** | Full suite green, git clean, PR ready | balanced |
-| **@sentinel** | Security audit — on demand, any context | deep_reasoning |
-
-### Runtimes — the same graph, the right models
-
-Models and efforts live **per runtime** in `rensei.config.yaml`:
-
-```yaml
-RUNTIME: claude            # what this environment compiles for
-MODELS:
-  claude:  { deep_reasoning: opus-4.5, reasoning: opus-4.1, balanced: sonnet-4.5, routine: haiku-4.5, micro: haiku-4 }
-  codex:   { deep_reasoning: gpt-5.2-codex, reasoning: gpt-5.1-codex, balanced: gpt-5-codex, routine: gpt-5-mini, micro: gpt-5-nano }
-  opencode:{ deep_reasoning: glm-5.3, reasoning: glm-4.7, balanced: glm-4.6, routine: glm-4.5-air, micro: glm-4.5-flash }
-```
-
-The studio's **runtime selector** filters the model/effort dropdowns to the active runtime and persists the choice on save; `build --target opencode` (or `codex`) compiles with that runtime's models. A flat `MODELS: {tier: model}` still works — it applies to every runtime.
-
-## CLI reference
-
-| Command | Purpose |
-|---------|---------|
-| `init [dir] [--global] [--force] [--target claude\|opencode\|all]` | Seed `.rensei/` and compile |
-| `build [--dir <path>] [--target …]` | Recompile all artifacts from `.rensei/` |
-| `validate` `[--json]` | Graph health + artifact drift (CI-ready JSON) |
-| `doctor` `[--json]` | Environment: git repo, runtime CLIs, SDD tool, entry-point blocks — `init` runs it silently as advice |
-| `graph [--dir <path>]` | Regenerate `graph.html` only |
-| `status [--start\|--set\|--note\|--reset]` | Where the loop is right now |
-| `route "request" [--list]` | Deterministic kata routing preview — zero tokens |
-| `diff [--dir <path>]` | Your `.rensei/` vs the packaged core |
-| `update [--dir <path>] [--force]` | Pull core updates — your edits win |
-| `studio [--dir <path>] [--port N]` | Bidirectional visual ⇄ YAML graph editor |
-
-### `status` — observe the loop
-
-The runner (`/rensei`) and every compiled agent keep `.rensei/state.json`
-current as the loop advances, so the tool observes what it preaches. The loop
-**auto-starts** the first time a phase is recorded — no explicit init needed:
+**The state is live.** Agents write `.rensei/state.json` as they work:
 
 ```bash
 $ npx rensei-kata status
-task:    login with Google OAuth
-phase:   ANALYZE  (@analyze, claude-fable-5, effort max)
+task:    add password reset with email tokens
+phase:   QUALITY-REVIEW  (@quality, claude-sonnet-5, effort medium)
 loops:   quality>correct ×2
 
 next:
-  → plan  when: all ambiguities resolved
-  → correct  when: issues found — 2/3 used
-
-recent history:
-  2026-08-14 10:12  gate → analyze — visual == no
-  2026-08-14 10:31  analyze → plan
+  → correct   when: issues found — 2/3 used
+  → integrate when: approved
 ```
 
-Bounds are visible live: a bounded transition shows `2/3 used`, and hitting the
-max surfaces `⚠ BOUND REACHED — surface it, do not loop again`. Subcommands:
-`--start "task"` names the loop · `--set <phase>` records a phase entry (agents
-do this automatically) · `--note "…"` logs gate decisions · `--reset` clears.
+A bounded transition hitting its max surfaces `⚠ BOUND REACHED — surface it, do not loop again`.
 
-### `route` — test routing for free
+## A node IS an agent
 
-See exactly where kata would send a request, and why — no session, no tokens:
+There's no roster to pick from. Adding a node to the graph **creates the agent** — on save, `.rensei/agents/<id>/` is scaffolded and the compiler wires it into kata routing, the runner, the docs and the runtime artifacts.
 
-```bash
-$ npx rensei-kata route "corrige este bug en el login"
-✓ → @builder  (score 21)
-    matched (es): "corrige" ×1 — @builder
-    matched (es): "bug en" ×1 — @builder
+- **Duplicate** (Ctrl+D) seeds a new agent as a copy of the source — an **unlinked** copy: editing either never touches the other.
+- The agent's identity is its **name**; the id is its derived slug. Two agents can't share a name — that's how instances differentiate (two self-critiques, differently named, differently scoped).
+- **Deactivated, not deleted:** removing a node purges the agent from the runtime but keeps its source (prompt, config, skills) on the **studio shelf** — reactivate in one click, or delete forever with a two-step confirm.
 
-$ npx rensei-kata route --list     # full ES/EN trigger vocabulary per agent
-```
-
-The studio has the same simulator behind the **kata** button.
-
-### `diff` / `update` — stay current
-
-```bash
-npx rensei-kata diff       # .rensei/ vs packaged core: changed / missing / local-only
-npx rensei-kata update     # pull core updates — YOUR EDITS WIN (--force overwrites)
-```
-
-### `validate` — graph health + drift
-
-Every build records a sha256 of each generated artifact (`.rensei/build-manifest.json`). `validate` compares and flags hand-edited compiled files **before** the next build silently destroys them:
-
-```
-⚠ generated file was hand-edited since the last build: .claude/agents/builder.md
-  — move the change into .rensei/ (agents/<n>/prompt.md, fragments/, graph)
-```
-
-`validate --json` emits machine-readable output — errors carry `node`/`edge` anchors and concrete fix suggestions — ready for CI pipelines.
-
-### `studio` — visual ⇄ YAML editor
+## The studio
 
 ```bash
 npx rensei-kata studio        # → http://localhost:4789
@@ -299,85 +127,110 @@ npx rensei-kata studio        # → http://localhost:4789
 
 The studio is the **workflow configurator**: what you edit here is what rensei and kata become.
 
-- **Left inspector, always available** (hide it with the toggle) — the canvas fills the whole container underneath.
-- **+ agent** adds a node — a new agent, scaffolded and wired into rensei + kata on save. **Ctrl+D** duplicates one as an unlinked copy.
-- The agent's **name** is its identity; model/effort dropdowns adapt to the selected **runtime** (claude · codex · opencode).
-- **As YAML** — a synced pane; a **line-diff preview** shows exactly what will change before it hits the canvas.
-- Every save **validates first**, writes `rensei.graph.yaml`, scaffolds new agents, and **recompiles everything** — the change reaches the agents immediately. Validation errors are **anchored to the offending node/edge** on the canvas.
-- **Ctrl+K** command palette, **minimap**, **SVG/PNG** export, **agent shelf** (deactivated agents: reactivate or delete forever).
+| Surface | What it does |
+|---------|--------------|
+| **Canvas** | Infinite, pannable (drag) — nodes are agents, arrows are gated transitions; alignment guides, minimap, zoom, marquee multi-select (Shift+drag) |
+| **Inspector** (left) | Tabbed: **Agent** (name, model/effort per runtime, lane, summary, flags, deactivate) · **Skills** · **Prompt** (the agent's brain — inline + full-size modal editor) · **Shelf** (deactivated agents) |
+| **Dock** (top) | + agent, + transition, zoom, fit, reset layout, SVG/PNG export |
+| **Topbar** | brand · runtime selector (claude · codex · opencode, theme-aware) · theme · YAML drawer · Save |
+| **YAML drawer** | Synced source view; edits apply with a line-diff preview |
+| **Palette** (Ctrl+K) | Every action, keyboard-first |
 
-## Targets: Claude Code, OpenCode, or both
+Every save **validates first** — invalid graphs never touch disk, and errors are anchored to the offending node on the canvas (red border + tooltip; the toast jumps to it). Saving scaffolds new agents, recompiles everything, and reports what changed.
 
-One graph, any runtime:
+## CLI reference
 
-```bash
-npx rensei-kata init --target opencode   # .opencode/agent/, command/, rule/ + AGENTS.md block
-npx rensei-kata build --target all       # .claude/ + .opencode/ from the same source
-```
+| Command | Purpose |
+|---------|---------|
+| `init [dir] [--global] [--force] [--target claude\|opencode\|codex\|all]` | Seed `.rensei/`, validate, compile, run doctor as advice |
+| `build [--dir <path>] [--target …]` | Recompile all artifacts from `.rensei/` |
+| `validate [--json]` | Graph health + artifact drift (CI-ready JSON) |
+| `doctor [--json]` | Environment: git, runtime CLIs, SDD tool, entry blocks, shelf count |
+| `graph [--dir <path>]` | Regenerate `graph.html` only |
+| `status [--start\|--set\|--note\|--reset]` | Where the loop is right now — phases, bounds, history |
+| `route "request" [--list]` | Deterministic kata routing preview — zero tokens |
+| `diff [--dir <path>]` | Your `.rensei/` vs the packaged core (changed / missing / local-only) |
+| `update [--dir <path>] [--force]` | Pull core updates — **your edits win** |
+| `studio [--dir <path>] [--port N]` | The visual configurator |
+
+## Runtimes
+
+One graph, the right models — `rensei.config.yaml` holds model tiers **per runtime** and the compiler resolves them:
 
 | Target | Artifacts | Entry point |
 |--------|-----------|-------------|
-| `claude` (default) | `.claude/agents/`, `.claude/commands/`, `.claude/rules/` | `CLAUDE.md` managed block |
-| `opencode` | `.opencode/agent/`, `.opencode/command/`, `.opencode/rule/` | `AGENTS.md` managed block |
-| `all` | both | both |
+| `claude` (default) | `.claude/agents/` (md+frontmatter) · `.claude/commands/` · `.claude/rules/` | `CLAUDE.md` managed block |
+| `opencode` | `.opencode/agents/` · `.opencode/commands/` · `.opencode/rule/` | `AGENTS.md` managed block |
+| `codex` | `.codex/agents/*.toml` (native custom agents: model + reasoning effort per tier) · `.agents/skills/rensei` + `.agents/skills/kata` (the runner `$rensei` and dispatcher `$kata` — codex's replacement for deprecated custom prompts) | `AGENTS.md` managed block (points at RENSEI.md, rules, skills, agents) |
+| `all` | every target | all |
 
-## Skills — optional and configurable
+In Codex, run the loop with `$rensei <task>` and dispatch with `$kata <request>` — the skill instructions drive phase-by-phase delegation to the custom agents in `.codex/agents/`.
 
-Skills are data, not prose hardcoded in prompts:
+The studio's runtime selector filters model/effort choices to the active runtime and remembers each runtime's assignments — switching claude → codex → claude round-trips every tier choice.
 
-- **Registry** — `rensei.config.yaml → SKILLS:` maps each skill to its purpose (`impeccable`, `dataviz`, `design-md`…).
-- **Per agent** — `agents/<name>/agent.yaml → skills:` declares what the agent can work with.
-- **Per phase** — any graph node can override with `skills:` for that phase only. Editable in the studio (node inspector → skills checkboxes).
+```yaml
+# rensei.config.yaml (excerpt)
+RUNTIME: claude
+MODELS:
+  claude:  { deep_reasoning: claude-fable-5, balanced: claude-sonnet-5, routine: claude-haiku-4-5, micro: claude-haiku-4-5 }
+  codex:   { deep_reasoning: gpt-5.6,         balanced: gpt-5.1-codex,   routine: gpt-5.6-luna,    micro: gpt-5-nano }
+  opencode:{ deep_reasoning: kimi-k3,        balanced: glm-4.6,         routine: kimi-k2.7-code-highspeed, micro: deepseek-v4-flash }
+EFFORT:  { deep: max, standard: medium, fast: low, minimal: minimal }
+```
 
-Agents are compiled with a Skills table (phase · skill · purpose) and load each one *only when the task calls for it*. The validator warns when a skill isn't in the registry.
+## Configuration
 
-## Guarantees the validator enforces
+Everything tunable lives in `.rensei/rensei.config.yaml`:
+
+- **MODELS / EFFORT** — tiers per runtime (flat tables apply to all)
+- **ITERATIONS** — loop bounds (`correction_loop: 3`…)
+- **BEHAVIOR** — `ask_before_commit: false` makes agents commit without per-task confirmation
+- **SKILLS** — the skill registry (purpose per skill), assignable per agent or per phase (studio checkboxes)
+
+## Guarantees
 
 - **No unbounded cycles** — every loop edge needs `max:`
 - **Every node reachable** from the entry point; **no dead ends**
-- **Model/effort tiers** must exist in `rensei.config.yaml`
-- **No duplicate edges**, warning on parallel edges (merge conditions or remove)
-- **No trigger collisions** across agents (warns on kata routing ambiguity)
-- **No silent overwrites** — hand-edited generated files are flagged before the next build
+- **No trigger collisions** across agents (kata routing stays unambiguous)
+- **No silent overwrites** — hand-edited generated files are flagged before the next build destroys them (build-manifest drift detection)
+- **No side effects on failed saves** — validation precedes scaffolding
+- **The graph compiles only what it contains** — deleted agents are purged from the runtime, renamed agents keep their prompt
+
+## FAQ
+
+**Do I need to know the agents to use it?**
+No — that's kata's job. `/kata <anything>` routes it; `npx rensei-kata route "…"` previews the decision without spending tokens.
+
+**Can I add my own agent?**
+Yes, without leaving the studio: **+ agent** adds a node, Save scaffolds it, the Prompt tab writes its brain, and the runner/kata wire it in automatically.
+
+**What happens if I edit a generated file directly?**
+`validate`/`doctor` detect it via the build manifest and tell you to move the change into `.rensei/` — before the next build overwrites it.
+
+**Does it lock me into one runtime?**
+No. The same graph compiles to Claude Code, OpenCode, and Codex. New targets are adapters, not rewrites.
+
+**Where do loop runs live?**
+`.rensei/state.json` — `status` reads it; the studio and agents write it. Reset with `status --reset`.
 
 ## Repo layout
 
 ```
 core/                  ← the framework source (packaged by npm; seeds .rensei/)
 src/
-├── cli.js             ← command parsing
-├── bin/               ← CLI entry point
+├── cli.js             ← commands
 └── lib/
-    ├── load.js        ← .rensei/ loader (graph, config, agents, fragments…)
-    ├── validate.js    ← graph validator (Tarjan SCC, reachability, triggers)
+    ├── load.js        ← .rensei/ loader
+    ├── validate.js    ← graph validator (cycles, reachability, triggers)
     ├── compile.js     ← graph → agents/commands/docs + build manifest
-    ├── route.js       ← deterministic kata routing matcher
-    ├── state.js       ← loop state (.rensei/state.json)
+    ├── scaffold.js    ← node → agent directory (create, seed, rename)
+    ├── runner pieces  ← state.js (live loop state), route.js (kata matcher)
+    ├── doctor.js      ← environment checks
     ├── diff.js        ← core vs project diff/update
-    ├── diagram.js     ← static graph.html generator
+    ├── diagram.js     ← graph.html generator
     ├── graph-render.js← shared layout + SVG renderer (Node + browser)
     └── studio-*.js    ← local visual editor (server + page)
-examples/              ← opencode / opencode-kimi prototypes (headless runner preview)
-PRODUCT_ANALYSIS.md    ← product vision and roadmap
-DESIGN.md              ← visual design system (studio + diagram)
 ```
-
-## FAQ
-
-**Do I need to know the agents to use it?**
-No — that's kata's job. `/kata <anything>` routes to the right agent in Spanish or English. `npx rensei-kata route "…"` shows the decision before you spend tokens.
-
-**Can I add my own agent?**
-Yes — and you don't need to leave the studio. **+ agent** adds a node; on save the agent is scaffolded (`agents/<id>/` with definition and prompt), wired into kata's routing and the compiled artifacts. You can also add the node in YAML and run `build` — the scaffolder does the same. Customize the prompt afterwards in `agents/<id>/prompt.md`; the next build propagates it.
-
-**What happens if I edit a generated file directly?**
-`validate`/`doctor` detects it via the build manifest and tells you to move the change into `.rensei/` — before the next build overwrites it.
-
-**Does it lock me into Claude Code?**
-No. The graph compiles to Claude Code and OpenCode today; `prompts/` templates are tool-agnostic (usable in CI). New targets are adapters, not rewrites.
-
-**How do I customize models/effort/iteration limits/behavior?**
-`.rensei/rensei.config.yaml` — tiers (per runtime), effort levels, iteration bounds, skills registry, and behavior knobs like `BEHAVIOR.ask_before_commit: false` (agents commit without asking per task). `build` propagates changes everywhere.
 
 ## License
 

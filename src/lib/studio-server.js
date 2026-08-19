@@ -119,15 +119,22 @@ function startStudio(targetDir, { port = 4789, open = true } = {}) {
       : YAML.stringify(graph, { indent: 2 });
     write(graphFile, yamlOut);
     const fresh = loadCore(coreDir);
-    const { written, purged } = compile(fresh, targetDir, { runtime: runtime || fresh.config.RUNTIME });
+    // the studio compiles for the runtime its selector configures — target and
+    // model table move together (codex gets TOML + skills, not .claude dirs)
+    const activeRuntime = runtime || fresh.config.RUNTIME || 'claude';
+    const { written, purged } = compile(fresh, targetDir, { target: activeRuntime, runtime: activeRuntime });
 
     // renamed agents: the source directory is gone, so compile can't see it —
     // purge the stale compiled artifact by hand
     const fs = require('fs');
     const extraPurged = [];
     for (const rn of sc.renamed || []) {
-      for (const t of ['claude', 'opencode']) {
-        const ghost = path.join(targetDir, t === 'claude' ? '.claude' : '.opencode', 'agents', `${rn.from}.md`);
+      const ghosts = [
+        path.join(targetDir, '.claude', 'agents', `${rn.from}.md`),
+        path.join(targetDir, '.opencode', 'agents', `${rn.from}.md`),
+        path.join(targetDir, '.codex', 'agents', `${rn.from}.toml`),
+      ];
+      for (const ghost of ghosts) {
         if (fs.existsSync(ghost)) { fs.rmSync(ghost); extraPurged.push(toPosix(path.relative(targetDir, ghost))); }
       }
     }
@@ -161,7 +168,7 @@ function startStudio(targetDir, { port = 4789, open = true } = {}) {
         return send(res, 200, {
           graph: st.core.graph,
           config: st.core.config,
-          agents: [...st.core.agents].map(([name, a]) => ({ name, skills: a.def.skills || [] })),
+          agents: [...st.core.agents].map(([name, a]) => ({ name, description: a.def.description || '', skills: a.def.skills || [] })),
           inactive: inactiveAgents(st.core),
           yamlText: read(graphFile),
           errors: st.errors,

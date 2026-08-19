@@ -33,6 +33,7 @@ function detectTargets(targetDir) {
   const t = [];
   if (exists(path.join(targetDir, '.claude'))) t.push('claude');
   if (exists(path.join(targetDir, '.opencode'))) t.push('opencode');
+  if (exists(path.join(targetDir, '.codex'))) t.push('codex');
   return t.length ? t : ['claude'];
 }
 
@@ -45,7 +46,7 @@ function doctor(targetDir, core) {
   else add('git', 'warn', 'no git repository — the loop\'s commit protocol (one commit per task/fix) will not work', 'run: git init');
 
   // 2. runtime CLI — artifacts exist, but is the runtime installed?
-  const binOf = { claude: 'claude', opencode: 'opencode' };
+  const binOf = { claude: 'claude', opencode: 'opencode', codex: 'codex' };
   for (const t of detectTargets(targetDir)) {
     const bin = binOf[t];
     if (!bin) continue;
@@ -65,12 +66,13 @@ function doctor(targetDir, core) {
   }
 
   // 5. entry point doc — follow the compiled artifacts, not the config flag:
-  //    claude artifacts → CLAUDE.md; opencode artifacts → AGENTS.md
+  //    claude artifacts → CLAUDE.md; opencode/codex artifacts → AGENTS.md
   const targets = detectTargets(targetDir);
-  const entryChecks = [];
-  if (targets.includes('claude')) entryChecks.push(['CLAUDE.md', 'claude']);
-  if (targets.includes('opencode')) entryChecks.push(['AGENTS.md', 'opencode']);
-  if (!entryChecks.length) entryChecks.push(['CLAUDE.md', 'claude']);
+  const entryChecks = new Map();
+  if (targets.includes('claude')) entryChecks.set('CLAUDE.md', 'claude');
+  const agentsMdRuntimes = targets.filter(t => t === 'opencode' || t === 'codex');
+  if (agentsMdRuntimes.length) entryChecks.set('AGENTS.md', agentsMdRuntimes.join('+'));
+  if (!entryChecks.size) entryChecks.set('CLAUDE.md', 'claude');
   for (const [md, rt] of entryChecks) {
     const mdFile = path.join(targetDir, md);
     if (exists(mdFile)) {

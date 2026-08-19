@@ -18,10 +18,10 @@ MODELS:
     micro: claude-haiku-4-5           # cheapest available tier
   # OpenAI / Codex — current line: GPT-5.6 family + coding-tuned 5.1 Codex
   codex:
-    deep_reasoning: gpt-5.6-sol       # frontier reasoning/coding
-    reasoning: gpt-5.6-terra          # intelligence/cost balance
-    balanced: gpt-5.1-codex           # coding-tuned workhorse (DEFAULT)
-    routine: gpt-5.6-luna             # cost-sensitive high-volume
+    deep_reasoning: gpt-5.6             # frontier reasoning/coding
+    reasoning: gpt-5.6-terra            # intelligence/cost balance
+    balanced: gpt-5.1-codex             # coding-tuned workhorse (DEFAULT)
+    routine: gpt-5.6-luna               # cost-sensitive high-volume
     micro: gpt-5-nano
   # OpenCode is provider-agnostic (75+ providers) — a mixed-vendor ladder of
   # current coding models (Kimi K3, DeepSeek V4, GLM, Minimax, Gemini).

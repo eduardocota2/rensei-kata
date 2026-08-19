@@ -38,7 +38,7 @@ The same graph compiles anywhere; only the model names change:
 
 | Tier | Purpose | Claude | Codex | OpenCode |
 |------|---------|--------|-------|----------|
-| **deep_reasoning** | hardest reasoning: architecture, analysis, self-critique, security, design | claude-fable-5 | gpt-5.6-sol | kimi-k3 |
+| **deep_reasoning** | hardest reasoning: architecture, analysis, self-critique, security, design | claude-fable-5 | gpt-5.6 | kimi-k3 |
 | **reasoning** | strong reasoning, second opinion | claude-opus-5 | gpt-5.6-terra | deepseek-v4-pro |
 | **balanced** | everyday default: plans, reviews, integration | claude-sonnet-5 | gpt-5.1-codex | glm-4.6 |
 | **routine** | implementation, fixes, CRUD, docs | claude-haiku-4-5 | gpt-5.6-luna | kimi-k2.7-code-highspeed |

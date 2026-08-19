@@ -51,6 +51,16 @@ const STRINGS = {
   inspectorTitle: 'Agent',
   nodeTitle: 'Agent',
   transitionTitle: 'Transition',
+  tabAgent: 'Agent',
+  tabSkills: 'Skills',
+  tabPrompt: 'Prompt',
+  tabShelf: 'Shelf',
+  selectAgentFirst: 'Select an agent on the canvas first.',
+  terminalNoSkills: 'Terminal nodes carry no skills — uncheck "terminal" in the Agent tab to configure this phase.',
+  terminalNoPrompt: 'Terminal nodes carry no prompt — uncheck "terminal" in the Agent tab to configure this phase.',
+  deactivateNode: 'Deactivate agent',
+  deactivateHint: 'Moves it to the Shelf tab — prompt, config and skills are preserved; it just leaves the workflow.',
+  deactivatedToast: '@{a} deactivated — waiting in the Shelf tab; Save to confirm (Ctrl+Z restores)',
   inspectorEmpty:
     'Every node IS an agent — add one with <code>+ agent</code> and it is created, wired into rensei and kata on save.<br><br>' +
     'Click a node or an arrow to edit it. Drag a node to move it — its position is saved to the YAML (<code>positions:</code>).<br><br>' +
@@ -103,8 +113,8 @@ const STRINGS = {
   promptLoadFail: 'could not load the prompt — is the studio server running?',
   promptSaved: 'Prompt saved — Save the graph to recompile the agents.',
   promptDirty: 'prompt edited — click Save prompt to write it',
+  promptExpand: 'expand',
   // shelf (deactivated agents)
-  shelfTitle: 'Deactivated',
   shelfEmpty: 'nothing here — agents you remove from the graph wait on this shelf',
   shelfHint: 'Removed from the workflow, not deleted — reactivate to restore the agent with its prompt intact',
   shelfReactivate: 'reactivate',
@@ -112,6 +122,7 @@ const STRINGS = {
   shelfDeleted: '@{a} deleted permanently',
   shelfReactivated: '@{a} restored — connect it and Save',
   shelfCustom: 'custom prompt',
+  shelfPending: 'pending save',
   shelfNeedName: 'another node already uses that name — the shelf item stays until you rename it',
   // data defaults
   newNodeBase: 'node',
@@ -231,14 +242,19 @@ button.danger { color: var(--danger); }
 button.danger:hover { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, transparent); }
 button:disabled { opacity: .45; cursor: default; pointer-events: none; }
 
-/* topbar — minimal: brand, runtime, view/theme toggles, YAML, Save.
-   60px tall, 14px controls: present, not loud (impeccable: tool density) */
+/* topbar — the brand zone mirrors the inspector's width so the workspace
+   reads as two columns: [brand | panel] above [content | canvas] */
 .topbar {
   display: flex; align-items: center; gap: .55rem; height: 60px; flex: none;
-  padding: 0 1rem; background: var(--panel); border-bottom: 1px solid var(--border);
+  padding: 0 1rem 0 0; background: var(--panel); border-bottom: 1px solid var(--border);
 }
-.brand { display: flex; align-items: baseline; gap: .45rem; margin-right: .35rem; }
-.brand h1 { font-size: 16px; margin: 0; letter-spacing: .01em; font-weight: 650; }
+.brand {
+  display: flex; align-items: baseline; gap: .45rem;
+  width: 330px; flex: none; padding-left: 1rem; box-sizing: border-box;
+  transition: width .22s cubic-bezier(.3, .8, .3, 1);
+}
+.topbar.inspector-hidden .brand { width: auto; }
+.brand h1 { font-size: 16px; margin: 0; letter-spacing: .01em; font-weight: 650; white-space: nowrap; }
 .brand h1 .kanji { color: var(--accent); }
 .topbar .spacer { flex: 1; }
 .topbar > *:not(.spacer) { flex: none; }
@@ -260,23 +276,37 @@ button:disabled { opacity: .45; cursor: default; pointer-events: none; }
 .tbtn.primary:hover { background: var(--accent-fill-strong); border-color: var(--accent-fill-strong); }
 .tbtn:disabled { opacity: .45; cursor: default; pointer-events: none; }
 
-/* runtime selector — primary configuration, sits in the topbar with its own
-   chip icon; models/efforts across the whole studio follow it */
-.runtime-wrap {
+/* runtime selector — a segmented control that follows the theme (both modes),
+   sitting right after the brand: the first thing you set is who you're talking to */
+.providers {
   display: inline-flex; align-items: center; gap: .45rem; height: 38px;
   padding: 0 .35rem 0 .75rem; background: var(--elevated);
   border: 1px solid var(--border); border-radius: 8px;
   transition: border-color .12s ease-out, box-shadow .12s ease-out;
 }
-.runtime-wrap:hover { border-color: var(--border-strong); }
-.runtime-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.runtime-wrap svg { display: block; color: var(--accent); flex: none; }
-.runtime-wrap .runtime-select {
-  font: inherit; font-size: 14px; font-weight: 600; color: var(--ink);
-  background: transparent; border: 0; height: 36px; padding: 0 .55rem 0 0;
-  cursor: pointer; text-transform: capitalize;
+.providers:hover { border-color: var(--border-strong); }
+.providers:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.providers .chip-icon { display: block; color: var(--accent); flex: none; }
+.provider-tabs { display: inline-flex; align-items: center; gap: 2px; height: 30px; padding: 0 2px;
+  background: var(--inset); border-radius: 6px; }
+.ptab {
+  display: inline-flex; align-items: center; height: 26px; padding: 0 .6rem;
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--muted);
+  background: transparent; border: 1px solid transparent; border-radius: 5px;
+  cursor: pointer; text-transform: capitalize; line-height: 1;
+  transition: color .12s ease-out, background .12s ease-out, box-shadow .12s ease-out;
 }
-.runtime-wrap .runtime-select:focus-visible { outline: none; box-shadow: none; }
+.ptab:hover { color: var(--ink); }
+.ptab.active {
+  color: var(--ink); background: var(--panel);
+  border-color: var(--border-strong);
+  box-shadow: 0 1px 3px rgb(0 0 0 / .08);
+}
+:root[data-theme="dark"] .ptab.active { box-shadow: 0 1px 3px rgb(0 0 0 / .3); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .ptab.active { box-shadow: 0 1px 3px rgb(0 0 0 / .3); }
+}
+.ptab:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
 .status {
   position: absolute; bottom: .9rem; right: .9rem; z-index: 7;
@@ -362,43 +392,68 @@ button:disabled { opacity: .45; cursor: default; pointer-events: none; }
   padding: .35rem .85rem; font-size: 12px; color: var(--muted); box-shadow: 0 4px 16px rgb(0 0 0 / .10);
 }
 
-/* inspector — its own flex column on the left; it collapses to a width
+/* inspector — its own flex column on the left; it collapses with a width
    animation and leaves the flap visible to bring it back */
 .inspector {
   width: 330px; flex: none; background: var(--panel); border-right: 1px solid var(--border);
   overflow-y: auto; overflow-x: hidden;
   transition: width .22s cubic-bezier(.3, .8, .3, 1), opacity .18s ease-out .04s;
 }
-.inspector.hidden { width: 0; opacity: 0; }
+.inspector.hidden { width: 0; opacity: 0; overflow: hidden; }
 
-/* the flap — the panel's own toggle, riding its right edge; when the panel is
-   hidden the flap stays pinned at the canvas's left edge */
+/* the flap — the panel's own toggle, riding its right edge via the flex flow;
+   when the panel is hidden it stays pinned at the canvas's left edge */
 .insp-flap {
-  position: absolute; left: 330px; top: 50%; transform: translateY(-50%); z-index: 8;
-  width: 20px; height: 52px; padding: 0;
+  flex: none; align-self: center; z-index: 8;
+  width: 22px; height: 56px; padding: 0; margin-left: -1px;
   display: inline-flex; align-items: center; justify-content: center;
   color: var(--muted); background: var(--panel);
   border: 1px solid var(--border); border-left: 0; border-radius: 0 8px 8px 0;
   cursor: pointer;
-  transition: left .22s cubic-bezier(.3, .8, .3, 1), color .12s ease-out, background .12s ease-out;
+  transition: color .12s ease-out, background .12s ease-out;
 }
 .insp-flap:hover { color: var(--accent); background: var(--elevated); }
 .insp-flap:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
-.insp-flap.closed { left: 0; }
-.insp-flap.closed svg { transform: rotate(180deg); }
 .insp-flap svg { transition: transform .22s cubic-bezier(.3, .8, .3, 1); }
+.insp-flap.closed svg { transform: rotate(180deg); }
 @media (max-width: 900px) {
-  .inspector { position: absolute; left: 0; top: 0; bottom: 0; z-index: 5; box-shadow: 6px 0 20px rgb(0 0 0 / .18); }
-  .insp-flap { left: 0 !important; z-index: 9; }
-  .insp-flap.closed { left: 0 !important; }
-  .inspector.hidden { width: 330px; transform: translateX(-100%); }
-  .inspector { transition: transform .22s cubic-bezier(.3, .8, .3, 1); }
+  .inspector { position: absolute; left: 0; top: 0; bottom: 0; z-index: 5; box-shadow: 6px 0 20px rgb(0 0 0 / .18); width: 330px; }
+  .inspector.hidden { width: 0; opacity: 0; }
+  .insp-flap { position: absolute; left: 0; top: 50%; transform: translateY(-50%); margin-left: 0; }
+  .inspector:not(.hidden) + .insp-flap { left: 330px; }
 }
 .inspector-head {
   display: flex; align-items: center; justify-content: space-between; gap: .5rem;
   padding: .75rem .95rem; border-bottom: 1px solid var(--border);
   font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 650;
 }
+
+/* inspector tabs — segmented control under the header; the shelf count
+   rides its label so deactivated agents stay discoverable */
+.insp-tabs {
+  display: flex; align-items: center; gap: 2px;
+  padding: .4rem .6rem; border-bottom: 1px solid var(--border);
+  background: var(--elevated); flex: none;
+}
+.itab {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center;
+  height: 26px; padding: 0 .5rem;
+  font: inherit; font-size: 11.5px; font-weight: 600; color: var(--muted);
+  background: transparent; border: 1px solid transparent; border-radius: 5px;
+  cursor: pointer; white-space: nowrap;
+  transition: color .12s ease-out, background .12s ease-out, border-color .12s ease-out;
+}
+.itab:hover { color: var(--ink); }
+.itab.active {
+  color: var(--ink); background: var(--panel);
+  border-color: var(--border-strong);
+  box-shadow: 0 1px 3px rgb(0 0 0 / .08);
+}
+:root[data-theme="dark"] .itab.active { box-shadow: 0 1px 3px rgb(0 0 0 / .3); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .itab.active { box-shadow: 0 1px 3px rgb(0 0 0 / .3); }
+}
+.itab:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .insp-close { padding: .1rem .35rem; border: 0; color: var(--muted); line-height: 1; }
 .insp-close:hover { color: var(--ink); }
 .insp-close svg { display: block; }
@@ -432,24 +487,32 @@ button:disabled { opacity: .45; cursor: default; pointer-events: none; }
   padding: .5rem .6rem; resize: vertical; min-height: 16em;
 }
 .prompt-field .prompt-area:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.prompt-field .prompt-save { margin-top: .45rem; font-size: 12px; }
+.prompt-field .prompt-actions { display: flex; gap: .45rem; margin-top: .45rem; }
+.prompt-field .prompt-save { font-size: 12px; }
+.prompt-field .prompt-expand {
+  display: inline-flex; align-items: center; gap: .3rem; font-size: 12px;
+  padding: .2rem .55rem; margin-left: auto; color: var(--muted);
+}
+.prompt-field .prompt-expand:hover { color: var(--ink); }
+.prompt-field .prompt-expand svg { display: block; }
 
-/* shelf — deactivated agents at the bottom of the inspector */
-.shelf { margin-top: 1.1rem; border-top: 1px solid var(--border); padding-top: .8rem; }
-.shelf-head {
-  display: flex; align-items: center; gap: .4rem; cursor: pointer; user-select: none;
-  font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 650;
+/* expanded prompt editor — a full-workspace modal: the brain deserves real
+   estate, not a 330px column */
+.prompt-modal { width: min(88ch, 94vw); max-height: 86vh; }
+.prompt-modal .modal-body { padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: .65rem; }
+.prompt-modal textarea {
+  width: 100%; flex: 1; min-height: 64vh;
+  font-family: "Cascadia Code", "JetBrains Mono", ui-monospace, Consolas, monospace;
+  font-size: 13.5px; line-height: 1.65; color: var(--ink);
+  background: var(--inset); border: 1px solid var(--border); border-radius: 8px;
+  padding: .8rem .9rem; resize: none; tab-size: 2;
 }
-.shelf-head .count {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
-  font-size: 10.5px; font-weight: 650; color: var(--on-accent); background: var(--accent-fill);
-}
-.shelf-head .chev { margin-left: auto; transition: transform .18s ease-out; }
-.shelf.closed .chev { transform: rotate(-90deg); }
-.shelf-body { padding: .55rem 0 .2rem; }
-.shelf.closed .shelf-body { display: none; }
-.shelf-hint { font-size: 11px; color: var(--faint); line-height: 1.5; margin-bottom: .5rem; }
+.prompt-modal textarea:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.prompt-modal .modal-actions .save-prompt { font-weight: 600; }
+
+/* shelf — deactivated agents, now its own inspector tab */
+.shelf-body { padding: .2rem 0; }
+.shelf-hint { font-size: 11px; color: var(--faint); line-height: 1.5; margin-bottom: .6rem; }
 .shelf-item {
   display: flex; align-items: center; gap: .45rem; padding: .42rem .5rem;
   border: 1px solid var(--border); border-radius: 8px; margin-bottom: .4rem;
@@ -461,6 +524,10 @@ button:disabled { opacity: .45; cursor: default; pointer-events: none; }
 .shelf-item .custom {
   font-size: 9.5px; font-weight: 650; letter-spacing: .04em; color: var(--ok);
   border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); border-radius: 99px; padding: 1px 6px;
+}
+.shelf-item .pending {
+  font-size: 9.5px; font-weight: 650; letter-spacing: .04em; color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); border-radius: 99px; padding: 1px 6px;
 }
 .shelf-item button { font-size: 11px; padding: .2rem .5rem; flex: none; }
 .shelf-item button.danger { color: var(--danger); }
@@ -629,7 +696,7 @@ const PAGE_JS = `
     guides: [], // active alignment guide lines during a node drag
     selection: [], // marquee multi-selection (node names); state.selected stays the inspector target
     inactive: [], // deactivated agents (the shelf)
-    shelfOpen: false,
+    inspTab: 'agent', // active inspector tab — persists across selections
     runtime: 'claude', runtimes: ['claude'], runtimeDirty: false,
   };
 
@@ -1563,13 +1630,20 @@ const PAGE_JS = `
     ta.spellcheck = false;
     ta.readOnly = true;
     ta.value = S.statusLoading;
+    var actions = document.createElement('div');
+    actions.className = 'prompt-actions';
     var saveBtn = document.createElement('button');
     saveBtn.className = 'prompt-save';
     saveBtn.textContent = 'Save prompt';
     saveBtn.disabled = true;
+    var expandBtn = document.createElement('button');
+    expandBtn.className = 'prompt-expand';
+    expandBtn.innerHTML = '<svg viewBox="0 0 14 14" width="13" height="13" aria-hidden="true"><path d="M2.5 5.5v-2a1 1 0 0 1 1-1h2M8.5 2.5h2a1 1 0 0 1 1 1v2M11.5 8.5v2a1 1 0 0 1-1 1h-2M5.5 11.5h-2a1 1 0 0 1-1-1v-2M5.8 5.8L8.2 8.2M8.2 5.5v2.7H5.5" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg> ' + S.promptExpand;
     row.appendChild(ta);
+    actions.appendChild(saveBtn);
+    actions.appendChild(expandBtn);
     wrap.appendChild(row);
-    wrap.appendChild(saveBtn);
+    wrap.appendChild(actions);
 
     var dirty = false;
     api('/api/prompt/' + nodeName).then(function (r) {
@@ -1604,6 +1678,32 @@ const PAGE_JS = `
         markDirty(); // graph save triggers the recompile that propagates it
       }).catch(function () { toast(S.promptLoadFail, 'err'); setDirty(true); });
     });
+
+    // expand: the prompt takes a full-size modal — the brain is big enough
+    // to deserve real estate, not a 330px column
+    expandBtn.addEventListener('click', function () {
+      openModal(function (m) {
+        m.classList.add('prompt-modal');
+        m.innerHTML =
+          '<div class="modal-head"><div><h2>@' + RG.esc(nodeName) + ' — ' + S.promptField + '</h2></div>' +
+          '<button class="insp-close" id="prompt-close" aria-label="Close">' +
+          '<svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 2 L8 8 M8 2 L2 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button></div>' +
+          '<div class="modal-body">' +
+          '<textarea id="prompt-big" spellcheck="false">' + '</textarea>' +
+          '<div class="modal-actions"><button id="prompt-big-save" class="primary save-prompt">Save prompt</button></div>' +
+          '</div>';
+        var big = m.querySelector('#prompt-big');
+        big.value = ta.value;
+        setTimeout(function () { big.focus(); }, 0);
+        m.querySelector('#prompt-close').addEventListener('click', function () { closeModal(); });
+        m.querySelector('#prompt-big-save').addEventListener('click', function () {
+          ta.value = big.value;
+          closeModal();
+          setDirty(true);
+          saveBtn.click(); // same save path — one truth, one save
+        });
+      });
+    });
     return wrap;
   }
 
@@ -1613,36 +1713,26 @@ const PAGE_JS = `
   // forever removes agents/<id>/ for real.
   function shelfMarkup() {
     var n = (state.inactive || []).length;
-    var h = '<div class="shelf' + (state.shelfOpen && n ? '' : ' closed') + '" id="shelf">' +
-      '<div class="shelf-head" id="shelf-toggle"><span>' + S.shelfTitle + '</span>' +
-      (n ? '<span class="count">' + n + '</span>' : '') +
-      '<svg class="chev" viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><path d="M2 3.5L5 6.5L8 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-      '</div>' +
-      '<div class="shelf-body">';
+    var h = '<div class="shelf-body">';
     if (!n) {
       h += '<div class="shelf-empty">' + S.shelfEmpty + '</div>';
     } else {
       h += '<div class="shelf-hint">' + S.shelfHint + '</div>';
       state.inactive.forEach(function (a) {
         h += '<div class="shelf-item" data-shelf="' + a.name + '">' +
-          '<div class="meta"><div class="nm">@' + RG.esc(a.name) + (a.hasCustomPrompt ? ' <span class="custom">' + S.shelfCustom + '</span>' : '') + '</div>' +
+          '<div class="meta"><div class="nm">@' + RG.esc(a.name) +
+          (a.pending ? ' <span class="pending">' + S.shelfPending + '</span>' : a.hasCustomPrompt ? ' <span class="custom">' + S.shelfCustom + '</span>' : '') + '</div>' +
           '<div class="ds">' + RG.esc(a.description || '') + '</div></div>' +
           '<button data-reactivate="' + a.name + '" title="Add this agent back to the graph">' + S.shelfReactivate + '</button>' +
           '<button class="danger" data-kill="' + a.name + '" title="Delete agents/' + a.name + '/ permanently">' + S.shelfDelete + '</button>' +
           '</div>';
       });
     }
-    h += '</div></div>';
+    h += '</div>';
     return h;
   }
 
   function wireShelf() {
-    var tog = document.getElementById('shelf-toggle');
-    if (tog) tog.addEventListener('click', function () {
-      state.shelfOpen = !state.shelfOpen;
-      var el = document.getElementById('shelf');
-      if (el) el.classList.toggle('closed', !state.shelfOpen || !(state.inactive || []).length);
-    });
     inspector.querySelectorAll('[data-reactivate]').forEach(function (b) {
       b.addEventListener('click', function () {
         var name = b.getAttribute('data-reactivate');
@@ -1748,121 +1838,184 @@ const PAGE_JS = `
     if (b) b.addEventListener('click', function () { setInspector(false); });
   }
 
+  // ---------- inspector (tabbed) ----------
+  // The panel hosts four panes — Agent (config), Skills, Prompt (the brain)
+  // and Shelf (deactivated agents). The active tab persists across selections
+  // (Figma pattern); edges get a single Config pane, no tab bar.
+  function tabBar(tabs) {
+    var bar = document.createElement('div');
+    bar.className = 'insp-tabs';
+    tabs.forEach(function (t) {
+      var b = document.createElement('button');
+      b.className = 'itab' + (t.id === state.inspTab ? ' active' : '');
+      b.setAttribute('role', 'tab');
+      b.textContent = t.label;
+      b.addEventListener('click', function () { state.inspTab = t.id; inspect(); });
+      bar.appendChild(b);
+    });
+    return bar;
+  }
+
+  function emptyHint(text) {
+    var d = document.createElement('div');
+    d.className = 'inspector-empty';
+    d.innerHTML = text;
+    return d;
+  }
+
   function inspect() {
-    // the panel is always mounted (left overlay); with nothing selected it
-    // shows the orientation copy instead of going away
-    if (!state.selected) {
-      var multi = (state.selection || []).length;
-      inspector.innerHTML =
-        '<div class="inspector-head"><span>' + S.inspectorTitle + '</span>' + closeBtn() + '</div>' +
-        (multi > 1
-          ? '<div class="inspector-empty"><strong>' + S.nSelected.replace('{n}', multi) + '</strong><br><br>' + S.nSelectedHint + '</div>'
-          : '<div class="inspector-empty">' + S.inspectorEmpty + '</div>') +
-        shelfMarkup();
-      wireClose();
-      wireShelf();
-      return;
+    var multi = (state.selection || []).length;
+    var sel = state.selected;
+    var isNode = sel && sel.kind === 'node';
+    var isEdge = sel && sel.kind === 'edge';
+
+    // edges keep a single-pane inspector — a transition is one field trio
+    if (isEdge) return inspectEdge(sel.key);
+
+    var name = isNode ? sel.key : null;
+    var node = isNode ? state.graph.nodes[name] : null;
+    if (isNode && !node) { state.selected = null; return inspect(); }
+
+    // tabs: shelf count always visible so the shelf is discoverable
+    var shelfCount = (state.inactive || []).length;
+    var tabs = [
+      { id: 'agent', label: S.tabAgent },
+      { id: 'skills', label: S.tabSkills },
+      { id: 'prompt', label: S.tabPrompt },
+      { id: 'shelf', label: S.tabShelf + (shelfCount ? ' · ' + shelfCount : '') },
+    ];
+    var headTitle = isNode
+      ? S.nodeTitle + ' · ' + RG.esc(name)
+      : (multi > 1 ? S.nSelected.replace('{n}', multi) : S.inspectorTitle);
+    inspector.innerHTML = '<div class="inspector-head"><span>' + headTitle + '</span>' + closeBtn() + '</div>';
+    wireClose();
+    inspector.appendChild(tabBar(tabs));
+
+    var body = document.createElement('div');
+    body.className = 'inspector-body';
+    var tab = state.inspTab;
+    if (!isNode && (tab === 'skills' || tab === 'prompt')) tab = 'agent'; // nothing selected → agent overview
+
+    // ---- AGENT (config) ----
+    if (tab === 'agent') {
+      if (!isNode) {
+        body.appendChild(emptyHint(multi > 1 ? S.nSelectedHint : S.inspectorEmpty));
+      } else {
+        if (!node.terminal && !agentExists(name)) {
+          var fresh = document.createElement('div');
+          fresh.className = 'skills-hint';
+          fresh.style.marginBottom = '.55rem';
+          fresh.textContent = node.based_on ? S.agentSeeded.split('{base}').join(node.based_on) : S.agentNew;
+          body.appendChild(fresh);
+        }
+        // the NAME is the identity — the id is its slug, derived and never shown
+        var nameInput = commitInput(node.label || name, function (v) { tryRename(name, v); });
+        nameInput.id = 'node-id';
+        var nameField = field(S.fieldLabel, nameInput);
+        var nameHint = document.createElement('div');
+        nameHint.className = 'skills-hint';
+        nameHint.textContent = S.fieldLabelHint;
+        nameField.appendChild(nameHint);
+        body.appendChild(nameField);
+        if (!node.terminal) {
+          body.appendChild(field(S.fieldModel, selectInput(tierOptions(rtTable('MODELS')), node.model, function (v) { pushHistory('sel:' + name + ':model'); node.model = v; markDirty(); render(); })));
+          body.appendChild(field(S.fieldEffort, selectInput(tierOptions(rtTable('EFFORT')), node.effort, function (v) { pushHistory('sel:' + name + ':effort'); node.effort = v; markDirty(); render(); })));
+          body.appendChild(field(S.fieldLane, selectInput(['spine', 'above', 'below'], node.lane || 'spine', function (v) {
+            pushHistory('sel:' + name + ':lane');
+            if (v === 'spine') delete node.lane; else node.lane = v;
+            if (state.graph.positions) delete state.graph.positions[name]; // lane change reclaims auto layout
+            markDirty(); render();
+          })));
+          body.appendChild(field(S.fieldSummary, areaInput(node.summary, function (v) { pushHistory('field:' + name + ':summary'); node.summary = v; markDirty(); render(); })));
+          body.appendChild(checkInput(S.fieldOptional, node.optional, function (v) { pushHistory('flag:' + name + ':optional'); node.optional = v; markDirty(); render(); }));
+        }
+        // terminal is non-destructive: phase data stays on the node — inert
+        // while terminal, instantly restored when it becomes a phase again
+        body.appendChild(checkInput(S.fieldTerminal, node.terminal, function (v) {
+          pushHistory('flag:' + name + ':terminal');
+          node.terminal = v;
+          markDirty(); render(); inspect();
+        }));
+        var isEntry = state.graph.entry === name;
+        body.appendChild(checkInput(S.fieldEntry, isEntry, function (v) {
+          if (v) { pushHistory('flag:' + name + ':entry'); state.graph.entry = name; markDirty(); render(); }
+        }, isEntry ? S.entryLockedTitle : ''));
+
+        // deactivate — NOT delete: the agent moves to the shelf with its
+        // brain (prompt + config + skills) intact; nothing is destroyed
+        var actions = document.createElement('div');
+        actions.className = 'actions';
+        actions.appendChild(dangerButton(S.deactivateNode, deactivateSelected));
+        var dHint = document.createElement('div');
+        dHint.className = 'skills-hint';
+        dHint.style.marginTop = '.4rem';
+        dHint.textContent = S.deactivateHint;
+        actions.appendChild(dHint);
+        body.appendChild(actions);
+      }
     }
 
-    if (state.selected.kind === 'node') {
-      var name = state.selected.key;
-      var node = state.graph.nodes[name];
-      if (!node) { state.selected = null; return inspect(); }
-      inspector.innerHTML = '<div class="inspector-head"><span>' + S.nodeTitle + ' · ' + RG.esc(name) + '</span>' + closeBtn() + '</div>';
-      wireClose();
-      var body = document.createElement('div');
-      body.className = 'inspector-body';
+    // ---- SKILLS ----
+    if (tab === 'skills') {
+      if (!isNode) body.appendChild(emptyHint(S.selectAgentFirst));
+      else if (node.terminal) body.appendChild(emptyHint(S.terminalNoSkills));
+      else body.appendChild(skillsField(node, name));
+    }
 
-      if (!node.terminal && !agentExists(name)) {
-        var fresh = document.createElement('div');
-        fresh.className = 'skills-hint';
-        fresh.style.marginBottom = '.55rem';
-        fresh.textContent = node.based_on ? S.agentSeeded.split('{base}').join(node.based_on) : S.agentNew;
-        body.appendChild(fresh);
-      }
+    // ---- PROMPT ----
+    if (tab === 'prompt') {
+      if (!isNode) body.appendChild(emptyHint(S.selectAgentFirst));
+      else if (node.terminal) body.appendChild(emptyHint(S.terminalNoPrompt));
+      else body.appendChild(promptField(name));
+    }
 
-      // the NAME is the identity — the id is its slug, derived and never shown
-      var nameInput = commitInput(node.label || name, function (v) { tryRename(name, v); });
-      nameInput.id = 'node-id';
-      var nameField = field(S.fieldLabel, nameInput);
-      var nameHint = document.createElement('div');
-      nameHint.className = 'skills-hint';
-      nameHint.textContent = S.fieldLabelHint;
-      nameField.appendChild(nameHint);
-      body.appendChild(nameField);
-      if (!node.terminal) {
-        body.appendChild(field(S.fieldModel, selectInput(tierOptions(rtTable('MODELS')), node.model, function (v) { pushHistory('sel:' + name + ':model'); node.model = v; markDirty(); render(); })));
-        body.appendChild(field(S.fieldEffort, selectInput(tierOptions(rtTable('EFFORT')), node.effort, function (v) { pushHistory('sel:' + name + ':effort'); node.effort = v; markDirty(); render(); })));
-        body.appendChild(field(S.fieldLane, selectInput(['spine', 'above', 'below'], node.lane || 'spine', function (v) {
-          pushHistory('sel:' + name + ':lane');
-          if (v === 'spine') delete node.lane; else node.lane = v;
-          if (state.graph.positions) delete state.graph.positions[name]; // lane change reclaims auto layout
-          markDirty(); render();
-        })));
-        body.appendChild(field(S.fieldSummary, areaInput(node.summary, function (v) { pushHistory('field:' + name + ':summary'); node.summary = v; markDirty(); render(); })));
-        body.appendChild(skillsField(node, name));
-        body.appendChild(promptField(name));
-        body.appendChild(checkInput(S.fieldOptional, node.optional, function (v) { pushHistory('flag:' + name + ':optional'); node.optional = v; markDirty(); render(); }));
-      }
-      // terminal is non-destructive: phase data (agent/model/effort/summary) stays
-      // on the node — inert while terminal (validator + compiler ignore it there),
-      // and instantly restored when the node becomes a phase again
-      body.appendChild(checkInput(S.fieldTerminal, node.terminal, function (v) {
-        pushHistory('flag:' + name + ':terminal');
-        node.terminal = v;
-        markDirty(); render(); inspect();
-      }));
-      var isEntry = state.graph.entry === name;
-      body.appendChild(checkInput(S.fieldEntry, isEntry, function (v) {
-        if (v) { pushHistory('flag:' + name + ':entry'); state.graph.entry = name; markDirty(); render(); }
-      }, isEntry ? S.entryLockedTitle : ''));
-
-      var actions = document.createElement('div');
-      actions.className = 'actions';
-      actions.appendChild(dangerButton(S.deleteNode, deleteSelected));
-      body.appendChild(actions);
+    // ---- SHELF ----
+    if (tab === 'shelf') {
       body.insertAdjacentHTML('beforeend', shelfMarkup());
-      inspector.appendChild(body);
-      wireShelf();
-    } else {
-      var idx = state.selected.key;
-      var edge = state.graph.edges[idx];
-      if (!edge) { state.selected = null; return inspect(); }
-      inspector.innerHTML = '<div class="inspector-head"><span>' + S.transitionTitle + ' · ' + RG.esc(edge.from) + ' → ' + RG.esc(edge.to) + '</span>' + closeBtn() + '</div>';
-      wireClose();
-      var body2 = document.createElement('div');
-      body2.className = 'inspector-body';
-      var nodeNames = Object.keys(state.graph.nodes);
-      body2.appendChild(field(S.fieldFrom, selectInput(nodeNames, edge.from, function (v) {
-        if (v === edge.to) { toast(S.selfLoop, 'err'); inspect(); return; } // the validator rejects self-loops — reject them here first
-        pushHistory('edge:' + idx + ':from'); edge.from = v; markDirty(); render(); inspect();
-      })));
-      body2.appendChild(field(S.fieldTo, selectInput(nodeNames, edge.to, function (v) {
-        if (v === edge.from) { toast(S.selfLoop, 'err'); inspect(); return; }
-        pushHistory('edge:' + idx + ':to'); edge.to = v; markDirty(); render(); inspect();
-      })));
-      var whenInput = textInput(edge.when, function (v) {
-        pushHistory('edge:' + idx + ':when');
-        if (v) edge.when = v; else delete edge.when;
-        markDirty(); render();
-      });
-      whenInput.id = 'edge-when';
-      body2.appendChild(field(S.fieldWhen, whenInput));
-      var maxInput = textInput(edge.max, function (v) {
-        pushHistory('edge:' + idx + ':max');
-        if (v) edge.max = v; else delete edge.max;
-        var bad = !!v && !/^(\d+|\$[A-Za-z_][\w.]*)$/.test(v);
-        maxInput.classList.toggle('invalid', bad);
-        maxInput.title = bad ? S.maxInvalid : '';
-        markDirty(); render();
-      });
-      body2.appendChild(field(S.fieldMax, maxInput));
-      var actions2 = document.createElement('div');
-      actions2.className = 'actions';
-      actions2.appendChild(dangerButton(S.deleteEdge, deleteSelected));
-      body2.appendChild(actions2);
-      inspector.appendChild(body2);
     }
+
+    inspector.appendChild(body);
+    wireShelf();
+  }
+
+  // single-pane edge inspector (no tab bar)
+  function inspectEdge(idx) {
+    var edge = state.graph.edges[idx];
+    if (!edge) { state.selected = null; return inspect(); }
+    inspector.innerHTML = '<div class="inspector-head"><span>' + S.transitionTitle + ' · ' + RG.esc(edge.from) + ' → ' + RG.esc(edge.to) + '</span>' + closeBtn() + '</div>';
+    wireClose();
+    var body2 = document.createElement('div');
+    body2.className = 'inspector-body';
+    var nodeNames = Object.keys(state.graph.nodes);
+    body2.appendChild(field(S.fieldFrom, selectInput(nodeNames, edge.from, function (v) {
+      if (v === edge.to) { toast(S.selfLoop, 'err'); inspect(); return; } // the validator rejects self-loops — reject them here first
+      pushHistory('edge:' + idx + ':from'); edge.from = v; markDirty(); render(); inspect();
+    })));
+    body2.appendChild(field(S.fieldTo, selectInput(nodeNames, edge.to, function (v) {
+      if (v === edge.from) { toast(S.selfLoop, 'err'); inspect(); return; }
+      pushHistory('edge:' + idx + ':to'); edge.to = v; markDirty(); render(); inspect();
+    })));
+    var whenInput = textInput(edge.when, function (v) {
+      pushHistory('edge:' + idx + ':when');
+      if (v) edge.when = v; else delete edge.when;
+      markDirty(); render();
+    });
+    whenInput.id = 'edge-when';
+    body2.appendChild(field(S.fieldWhen, whenInput));
+    var maxInput = textInput(edge.max, function (v) {
+      pushHistory('edge:' + idx + ':max');
+      if (v) edge.max = v; else delete edge.max;
+      var bad = !!v && !/^(\d+|\$[A-Za-z_][\w.]*)$/.test(v);
+      maxInput.classList.toggle('invalid', bad);
+      maxInput.title = bad ? S.maxInvalid : '';
+      markDirty(); render();
+    });
+    body2.appendChild(field(S.fieldMax, maxInput));
+    var actions2 = document.createElement('div');
+    actions2.className = 'actions';
+    actions2.appendChild(dangerButton(S.deleteEdge, deleteSelected));
+    body2.appendChild(actions2);
+    inspector.appendChild(body2);
   }
 
   // ---------- keyboard ----------
@@ -1890,6 +2043,8 @@ const PAGE_JS = `
       if (gone) state.selected = null;
     }
     if (state.selection) state.selection = state.selection.filter(function (n) { return !!state.graph.nodes[n]; });
+    // undo may resurrect a node that was optimistically shelved — drop it
+    state.inactive = (state.inactive || []).filter(function (a) { return !state.graph.nodes[a.name]; });
     markDirty(); render(); inspect();
   }
   function undo() {
@@ -1901,6 +2056,17 @@ const PAGE_JS = `
     if (!state.future.length) return;
     state.history.push(JSON.stringify(state.graph));
     restoreFrom(state.future.pop());
+  }
+
+  // the shelf entry for a just-deactivated agent — optimistic: it shows NOW,
+  // marked pending, and the server list confirms it on the next Save
+  function shelfOptimistic(names) {
+    names.forEach(function (n) {
+      if (!state.graph.nodes[n] && !(state.inactive || []).some(function (a) { return a.name === n; })) {
+        var known = (state.agents || []).find(function (a) { return a.name === n; });
+        state.inactive.push({ name: n, description: (known && known.description) || '', skills: (known && known.skills) || [], hasCustomPrompt: false, pending: true });
+      }
+    });
   }
 
   function deleteSelected() {
@@ -1915,8 +2081,9 @@ const PAGE_JS = `
       var dead = new Set(names);
       state.graph.edges = state.graph.edges.filter(function (e) { return !dead.has(e.from) && !dead.has(e.to); });
       state.selection = [];
+      shelfOptimistic(names);
       markDirty(); render(); inspect();
-      toast(S.deletedUndo, 'warn');
+      toast(S.deactivatedToast.split('{a}').join(names.length + ' agents'), 'warn');
       return;
     }
     if (!state.selected) return;
@@ -1926,11 +2093,31 @@ const PAGE_JS = `
       delete state.graph.nodes[name];
       if (state.graph.positions) delete state.graph.positions[name];
       state.graph.edges = state.graph.edges.filter(function (e) { return e.from !== name && e.to !== name; });
+      state.selected = null;
+      shelfOptimistic([name]);
+      // deactivation lands on the shelf — make the causality visible
+      state.inspTab = 'shelf';
+      markDirty(); render(); inspect();
+      toast(S.deactivatedToast.split('{a}').join('@' + name), 'warn');
+      return;
     } else {
       state.graph.edges.splice(state.selected.key, 1);
     }
     state.selected = null; markDirty(); render(); inspect();
     toast(S.deletedUndo, 'warn');
+  }
+
+  // Deactivate = deleteSelected with the shelf framing (same mechanics,
+  // honest label): the node leaves the workflow; the agent survives.
+  function deactivateSelected() { deleteSelected(); }
+
+  // the shelf list lives server-side (filesystem truth) — refresh after saves
+  function refreshInactive() {
+    api('/api/model').then(function (m) {
+      if (!m.body || !m.body.graph) return;
+      state.inactive = m.body.inactive || state.inactive;
+      if (state.inspTab === 'shelf' || !state.selected) inspect();
+    });
   }
 
   function nudge(name, key, step) {
@@ -2132,24 +2319,37 @@ const PAGE_JS = `
     inspector.classList.toggle('hidden', !open);
     inspToggle.classList.toggle('closed', !open);
     inspToggle.setAttribute('aria-expanded', String(open));
+    document.querySelector('.topbar').classList.toggle('inspector-hidden', !open);
     if (open) state.inspectorPinned = true;
     // the canvas just gained/lost 330px — re-frame unless the user framed it themselves
     setTimeout(function () { if (!state.viewTouched) fitView(); }, 240);
   }
   inspToggle.addEventListener('click', function () {
-    setInspector(!inspector.classList.contains('hidden'));
+    // visible → hide; hidden → show (NOT a double negation)
+    setInspector(inspector.classList.contains('hidden'));
   });
   document.getElementById('fit-view').addEventListener('click', fitView);
 
   // ---------- runtime selector ----------
-  // models and efforts adapt to where the workflow will run; switching is
-  // free (client-side re-filter) and persists to rensei.config.yaml on Save
-  var runtimeSel = document.getElementById('runtime');
-  runtimeSel.title = S.runtimeTitle;
-  runtimeSel.addEventListener('change', function () {
-    if (runtimeSel.value === state.runtime) return;
+  // segmented control: one tab per runtime, theme-following. models/efforts
+  // adapt instantly; switching persists per-provider memory into node.models.
+  var providersEl = document.getElementById('providers');
+  var ptabList = providersEl.querySelector('.provider-tabs');
+  function renderProviderTabs() {
+    ptabList.innerHTML = '';
+    state.runtimes.forEach(function (rt) {
+      var b = document.createElement('button');
+      b.className = 'ptab' + (rt === state.runtime ? ' active' : '');
+      b.textContent = rt;
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', String(rt === state.runtime));
+      b.addEventListener('click', function () { switchRuntime(rt); });
+      ptabList.appendChild(b);
+    });
+  }
+  function switchRuntime(newRt) {
+    if (newRt === state.runtime) return;
     var oldRt = state.runtime;
-    var newRt = runtimeSel.value;
     // per-provider memory: stash each agent's tier for the runtime being left,
     // restore its last tier for the runtime being entered (node.models map in
     // the YAML). Switching claude → codex → claude round-trips every choice.
@@ -2165,8 +2365,9 @@ const PAGE_JS = `
     updateSaveBtn();
     statusEl.textContent = S.runtimeDirty;
     statusEl.className = 'status warn';
+    renderProviderTabs();
     inspect(); // re-render tier selects with the new runtime's tables
-  });
+  }
 
   // ---------- theme (shared key across studio + diagram) ----------
   var themeBtn = document.getElementById('theme-toggle');
@@ -2230,6 +2431,7 @@ const PAGE_JS = `
     statusEl.textContent = r.status === 0 ? S.networkStatus : S.validationFailed;
     statusEl.className = 'status err';
     setSaving(false);
+    refreshInactive(); // optimistic shelf entries resync to the disk truth
   }
 
   // ONE save action. What it persists depends on the single editable surface:
@@ -2552,13 +2754,7 @@ const PAGE_JS = `
     state.yamlText = r.body.yamlText;
     state.runtime = r.body.runtime || 'claude';
     state.runtimes = r.body.runtimes || ['claude'];
-    runtimeSel.innerHTML = '';
-    state.runtimes.forEach(function (rt) {
-      var opt = document.createElement('option');
-      opt.value = rt; opt.textContent = rt;
-      if (rt === state.runtime) opt.selected = true;
-      runtimeSel.appendChild(opt);
-    });
+    renderProviderTabs();
     yamlArea.value = r.body.yamlText;
     updateGutter();
     if (r.body.errors && r.body.errors.length) {
@@ -2593,9 +2789,9 @@ ${CONTRACT}
   <div class="brand">
     <h1>rensei <span class="kanji">錬成</span> studio</h1>
   </div>
-  <div class="runtime-wrap" title="${STRINGS.runtimeTitle}">
-    <svg viewBox="0 0 14 14" width="15" height="15" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 1v2.2M7 10.8V13M1 7h2.2M10.8 7H13M3.2 3.2l1.5 1.5M9.3 9.3l1.5 1.5M10.8 3.2L9.3 4.7M4.7 9.3l-1.5 1.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
-    <select id="runtime" class="runtime-select"></select>
+  <div class="providers" id="providers" title="${STRINGS.runtimeTitle}">
+    <svg class="chip-icon" viewBox="0 0 14 14" width="15" height="15" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 1v2.2M7 10.8V13M1 7h2.2M10.8 7H13M3.2 3.2l1.5 1.5M9.3 9.3l1.5 1.5M10.8 3.2L9.3 4.7M4.7 9.3l-1.5 1.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+    <div class="provider-tabs" role="tablist" aria-label="Runtime"></div>
   </div>
   <span class="spacer"></span>
   <button id="theme-toggle" class="tbtn icon" title="" aria-label="Theme"></button>
